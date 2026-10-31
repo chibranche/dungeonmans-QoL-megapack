@@ -1,0 +1,8 @@
+{
+  "id": "qol",
+  "name": "Dungeonmans QoL",
+  "version": "2.0.0",
+  "author": "chibranche",
+  "description": "Fewer clicks everywhere: Proof presets, Academy Directory and Prepare hero, the Coop poultry window, map travel, overworld helpers, game speed.",
+  "minModKitVersion": "1.0.0"
+}
