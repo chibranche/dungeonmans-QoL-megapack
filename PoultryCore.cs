@@ -165,6 +165,8 @@ internal static class PoultryCore
 		public bool IsPlumage;
 		public dmEnemyBirdSteak BagItem; // set when the food is in the hero's bags
 		public int Count;
+		// Worth feeding on purpose: raises Pluck (rare steaks) or teaches a power for sure (Plumage).
+		public bool Useful => Tier > 0 || IsPlumage;
 	}
 
 	public static Food FoodFromItem(dmEnemyBirdSteak s)

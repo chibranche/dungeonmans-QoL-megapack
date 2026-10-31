@@ -38,6 +38,9 @@ public sealed class QoLMod : IMod
 		// QoL windows count as open menus for every mod (and for each other).
 		Ui.AddModal(() => AcademyDirectory.IsOpen);
 		Ui.AddModal(() => CoopPanel.IsOpen);
+		Ui.AddModal(() => QoLHub.IsOpen);
+
+		DevCapture.Register(ctx, ctx.Harmony);
 
 		Events.Input += g => !AcademyDirectory.InputPrefix(g);
 		Events.DrawOverlay += DrawOverlay;
@@ -45,12 +48,15 @@ public sealed class QoLMod : IMod
 
 	private static void DrawOverlay(dmGame g)
 	{
+		GameSpeed.SyncOption(g);
 		AcademyDirectory.DrawOverlay(g);
 		if (g.dungeonMans != null && !g.bShowMainMenu)
 		{
 			FloorHighlight.Draw(g);
 			OverworldHud.Draw(g);
 			GameSpeed.Draw(g);
+			QoLHub.DrawButton(g);
+			QoLHub.Draw(g);
 			PoultryHud.Draw(g);
 			if (CoopPanel.IsOpen)
 			{

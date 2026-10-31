@@ -34,12 +34,15 @@ internal static class AcademyDirectory
 		public Kind Kind;
 		public dmActor Actor;
 		public string Title => Kind.Title ?? Actor.Name;
+		public string Key => Kind.Category + "|" + Title;
 	}
 
-	private static readonly string[] Categories = { "New hero", "Teachers", "Turn-ins", "Gear", "Pets", "Other" };
+	private const string FavoritesTab = "Favorites";
+	private static readonly string[] Categories = { FavoritesTab, "New hero", "Teachers", "Turn-ins", "Gear", "Pets", "Other" };
 
 	private static readonly string[] CategoryHelp =
 	{
+		"Your favorites. Right-click any entry (or click its heart) to add or remove it.",
 		"Things to do once per hero, before leaving: spend Proofs, get potions and scrolls identified, empty the war chest.",
 		"Retired heroes (level 10+) and avenged ghosts. Each teaches every new hero once: a full mastery, a mastery point or a hammer.",
 		"Bring back relics, books and Mysterious Items. They upgrade the Academy for every future hero.",
@@ -142,10 +145,20 @@ internal static class AcademyDirectory
 
 	private static bool CanOpen(dmGame g) => Config.On(Config.AcademyDirectory) && InAcademy(g) && !UiBusy(g);
 
+	public static void DevOpen(int startTab)
+	{
+		tab = startTab;
+		Open();
+	}
+
 	private static void Open()
 	{
 		Rebuild();
 		IsOpen = true;
+		if (Categories[tab] == FavoritesTab && EntriesIn(tab).Count == 0)
+		{
+			tab = 1;
+		}
 		selected = 0;
 		scroll = 0;
 		dmAudio.PlayUIFX("open_dialog");
@@ -181,8 +194,58 @@ internal static class AcademyDirectory
 		entries = found;
 	}
 
-	private static List<Entry> TabEntries() =>
-		entries.Where(e => e.Kind.Category == Categories[tab]).ToList();
+	private static List<Entry> TabEntries() => EntriesIn(tab);
+
+	private static List<Entry> EntriesIn(int t) =>
+		Categories[t] == FavoritesTab ? entries.Where(IsFavorite).ToList() : entries.Where(e => e.Kind.Category == Categories[t]).ToList();
+
+	// ---------- favorites (Mods\QoL\directory_favorites.txt, one entry key per line) ----------
+
+	private static HashSet<string> favorites;
+
+	private static string FavoritesPath => QoLMod.Ctx.PathFor("directory_favorites.txt");
+
+	private static HashSet<string> Favorites
+	{
+		get
+		{
+			if (favorites == null)
+			{
+				favorites = new HashSet<string>();
+				try
+				{
+					if (System.IO.File.Exists(FavoritesPath))
+					{
+						favorites.UnionWith(System.IO.File.ReadAllLines(FavoritesPath).Where(l => l.Length > 0));
+					}
+				}
+				catch (Exception e)
+				{
+					Log.Write("Could not read " + FavoritesPath + ": " + e.Message);
+				}
+			}
+			return favorites;
+		}
+	}
+
+	private static bool IsFavorite(Entry e) => Favorites.Contains(e.Key);
+
+	private static void ToggleFavorite(Entry e)
+	{
+		if (!Favorites.Remove(e.Key))
+		{
+			Favorites.Add(e.Key);
+		}
+		dmAudio.PlayUIFX(IsFavorite(e) ? "ui_increase_02" : "ui_decrease_02");
+		try
+		{
+			System.IO.File.WriteAllLines(FavoritesPath, Favorites);
+		}
+		catch (Exception ex)
+		{
+			Log.Write("Could not write " + FavoritesPath + ": " + ex.Message);
+		}
+	}
 
 	// ---------- input ----------
 
@@ -191,6 +254,10 @@ internal static class AcademyDirectory
 	{
 		dmGame g = __instance;
 		GameSpeed.HandleKey(g);
+		if (!CoopPanel.IsOpen && !IsOpen && QoLHub.HandleInput(g))
+		{
+			return false;
+		}
 		if (CoopPanel.IsOpen)
 		{
 			CoopPanel.HandleInput(g);
@@ -284,6 +351,7 @@ internal static class AcademyDirectory
 			if (msg != null)
 			{
 				Game.AddStringToLog("^3Academy Directory:^7 " + msg);
+				Ui.Toast(msg);
 			}
 			return;
 		}
@@ -308,92 +376,42 @@ internal static class AcademyDirectory
 		}
 	}
 
-	// ---------- mouse callbacks ----------
-
-	private static object ClickOpen(ui_mouseFrame f, int b)
-	{
-		if (CanOpen(Game))
-		{
-			Open();
-		}
-		return true;
-	}
-
-	private static object ClickPrepare(ui_mouseFrame f, int b)
-	{
-		Prepare();
-		return true;
-	}
-
 	private static void Prepare()
 	{
 		IsOpen = false;
 		HeroPrep.Run();
 	}
 
-	private static object ClickClose(ui_mouseFrame f, int b)
+	private static void SetTab(int t)
 	{
-		Close();
-		return true;
-	}
-
-	private static object ClickTab(ui_mouseFrame f, int b)
-	{
-		tab = dmUtilities.GetIntValue(f.tagStringData);
+		tab = t;
 		selected = 0;
 		scroll = 0;
-		dmAudio.PlayUIFX("ui_click_01");
-		return true;
 	}
 
 	private static void Scroll(int dir, int count)
 	{
-		int before = scroll;
-		scroll = Math.Max(0, Math.Min(Math.Max(0, count - MaxRows), scroll + dir));
-		selected = Math.Max(scroll, Math.Min(scroll + MaxRows - 1, selected));
-		if (scroll != before)
-		{
-			dmAudio.PlayUIFX("ui_click_01");
-		}
+		scroll = Math.Max(0, Math.Min(Math.Max(0, (count + Columns - 1) / Columns - Rows), scroll + dir));
+		selected = Math.Max(scroll * Columns, Math.Min(Math.Min(count, (scroll + Rows) * Columns) - 1, selected));
 	}
 
 	private static void KeepSelectionVisible()
 	{
-		if (selected < scroll)
+		int row = selected / Columns;
+		if (row < scroll)
 		{
-			scroll = selected;
+			scroll = row;
 		}
-		else if (selected >= scroll + MaxRows)
+		else if (row >= scroll + Rows)
 		{
-			scroll = selected - MaxRows + 1;
+			scroll = row - Rows + 1;
 		}
 	}
-
-	private static object ClickScroll(ui_mouseFrame f, int b)
-	{
-		Scroll(dmUtilities.GetIntValue(f.tagStringData), TabEntries().Count);
-		return true;
-	}
-
-	private static object ClickEntry(ui_mouseFrame f, int b)
-	{
-		List<Entry> list = TabEntries();
-		int i = dmUtilities.GetIntValue(f.tagStringData);
-		if (i < list.Count)
-		{
-			GoTo(list[i]);
-		}
-		return true;
-	}
-
-	private static bool PanelOpen(ui_mouseFrame f) => IsOpen;
-	private static bool PrepVisible(ui_mouseFrame f) => IsOpen && Config.On(Config.HeroPrep);
-	private static bool ButtonVisible(ui_mouseFrame f) => !IsOpen && CanOpen(Game);
 
 	// ---------- drawing ----------
 
-	private const int PanelW = 24 * 32, RowH = 64, MaxRows = 5;
-	private static int scroll; // index of the first visible row in the current tab
+	private const int Columns = 2, Rows = 5, CardH = 64;
+	private static int scroll; // first visible row of cards
 
 	// Called from ModKit's Events.DrawOverlay (see QoLMod), so it draws under the mouse cursor.
 	public static void DrawOverlay(dmGame g)
@@ -410,7 +428,11 @@ internal static class AcademyDirectory
 			}
 			else if (CanOpen(g))
 			{
-				DrawOpenButton(g);
+				g.theRenderer.BeginSpriteBatch();
+				// Left of the game's own 80px top-right icon.
+				var r = new Rectangle(Ui.ScreenSize.X - 112 - 240, 6, 240, 34);
+				Ui.BoxButton("qol_dir_open", r, "Academy Directory", Open, font: UiFont.Medium, tooltipText: "Everyone and everything in the Academy (Home)", stackLevel: 6);
+				g.theRenderer.EndSpriteBatch();
 			}
 		}
 		catch (Exception ex)
@@ -420,163 +442,111 @@ internal static class AcademyDirectory
 		}
 	}
 
-	private static void DrawOpenButton(dmGame g)
-	{
-		wg2DRenderer tr = g.theRenderer;
-		int w = 8 * 32, x = (int)tr.fWindowXSize - w - 112, y = 4; // left of the game's own 80px top-right icon
-		tr.BeginSpriteBatch();
-		tr.bForceDropShadows = true;
-		tr.DrawParchmentBox(x, y, 8, 1);
-		ui_mouseFrame frame = g.theUIFrames.AddFrame(x, y, w, 32, 5, "qol_academy_dir_button");
-		frame.funcOnClick = ClickOpen;
-		frame.RemoveIfFalse = ButtonVisible;
-		tr.SetActiveFont(tr.fontNyala18);
-		Color c = g.theInput.IsActiveFrame(frame) ? ShepColor.Yellow : Color.White;
-		tr.DrawString("Academy Directory  ^3[Home]^7", new Vector2(x + 30, y + 6), c);
-		tr.EndSpriteBatch();
-	}
-
 	private static void DrawPanel(dmGame g)
 	{
 		wg2DRenderer tr = g.theRenderer;
-		dmInput input = g.theInput;
-		dmUIMouseFrameManager frames = g.theUIFrames;
 		List<Entry> list = TabEntries();
-		if (selected >= list.Count)
-		{
-			selected = Math.Max(0, list.Count - 1);
-		}
-
-		int panelH = 15 * 32 + 96;
-		int x = (int)(tr.fWindowXSize * 0.5f) - PanelW / 2;
-		int y = Math.Max(8, (int)(tr.fWindowYSize * 0.5f) - panelH / 2);
+		selected = Math.Max(0, Math.Min(selected, list.Count - 1));
 
 		tr.BeginSpriteBatch();
 		tr.bForceDropShadows = true;
-		tr.DimScreen();
-		// Blocks clicks from reaching the world (and walking the hero) while the panel is open.
-		frames.AddFrame(0, 0, (int)tr.fWindowXSize, (int)tr.fWindowYSize, 20, "qol_academy_dir_blocker").RemoveIfFalse = PanelOpen;
-		tr.DrawParchmentBox(x, y, 24, 15);
-		tr.DrawParchmentBox(x, y + 15 * 32 + 8, 24, 3);
+		Rectangle c = Ui.ModalWindow("qol_dir", 26, 16, "Academy Directory", Close);
 
-		tr.SetActiveFont(tr.fontNyala30);
-		tr.DrawString("Academy Directory", new Vector2(x + 24, y + 12), ShepColor.Yellow);
-		// "Prepare hero" button: every new-hero chore in one click (see HeroPrep).
-		bool prepHot = false;
+		// Prepare hero, in the title bar.
 		if (Config.On(Config.HeroPrep))
 		{
-			ui_mouseFrame prep = frames.AddFrame(x + 280, y + 12, 230, 32, 21, "qol_academy_dir_prep");
-			prep.funcOnClick = ClickPrepare;
-			prep.RemoveIfFalse = PrepVisible;
-			prepHot = input.IsActiveFrame(prep);
-			tr.SetActiveFont(tr.fontNyala24);
-			tr.DrawString("[ Prepare hero ]  ^7(P)", new Vector2(x + 284, y + 14), prepHot ? ShepColor.Yellow : ShepColor.Cyan);
-		}
-		tr.SetActiveFont(tr.fontNyala18);
-		tr.DrawString("Click / Enter: go there    Left/Right: tabs    Esc: close", new Vector2(x + 500, y + 22), Color.LightGray);
-
-		ui_mouseFrame close = frames.AddFrame(x + PanelW - 44, y + 8, 36, 32, 21, "qol_academy_dir_close");
-		close.funcOnClick = ClickClose;
-		close.RemoveIfFalse = PanelOpen;
-		tr.SetActiveFont(tr.fontNyala24);
-		tr.DrawString("X", new Vector2(x + PanelW - 34, y + 10), input.IsActiveFrame(close) ? ShepColor.Yellow : Color.White);
-
-		// Tabs
-		int tabX = x + 20, tabY = y + 56;
-		tr.SetActiveFont(tr.fontNyala18);
-		for (int t = 0; t < Categories.Length; t++)
-		{
-			int count = entries.Count(e => e.Kind.Category == Categories[t]);
-			string label = Categories[t] + " (" + count + ")";
-			int w = label.Length * 8 + 24;
-			ui_mouseFrame tf = frames.AddFrame(tabX, tabY, w, 28, 21, "qol_academy_dir_tab_" + t);
-			tf.tagStringData = t.ToString();
-			tf.funcOnClick = ClickTab;
-			tf.RemoveIfFalse = PanelOpen;
-			bool hot = input.IsActiveFrame(tf);
-			Color c = t == tab ? ShepColor.Yellow : hot ? Color.White : Color.DarkGray;
-			tr.DrawString(label, new Vector2(tabX + 8, tabY + 4), c);
-			if (t == tab)
+			List<string> plan = HeroPrep.Plan();
+			string tip = plan.Count == 0 ? "Nothing left to do for this hero." : "Will:" + string.Concat(plan.Select(p => "\n  " + p));
+			if (ProofPresets.IsEmpty(0))
 			{
-				tr.DrawLine(tabX + 4, tabY + 28, tabX + w - 8, tabY + 28, 2, ShepColor.Yellow);
+				tip += "\n(Save Proof preset 1 at the Battlemaster to include stats.)";
 			}
-			tabX += w + 8;
+			Ui.BoxButton("qol_dir_prep", new Rectangle(c.Right - 250, c.Y - 52, 196, 30), "Prepare hero  (P)", Prepare, plan.Count > 0,
+				tooltipText: tip, accent: Palette.Good, stackLevel: Ui.WindowLevel + 2);
 		}
-		tr.DrawLine(x + 16, tabY + 34, x + PanelW - 16, tabY + 34, 1, Color.Gray);
 
-		// Entries
-		int rowY = tabY + 44;
+		// Tabs with counts; Favorites first (with a heart icon drawn over the padding).
+		string[] labels = Categories.Select((cat, i) => (i == 0 ? "     " : "") + cat + " " + EntriesIn(i).Count).ToArray();
+		int th = Ui.Tabs("qol_dir", c.X, c.Y, labels, tab, SetTab, null, UiFont.Small);
+		Ui.Icon("ui_favorite_heart", new Rectangle(c.X + 10, c.Y + 7, 18, 18));
+
+		// Cards grid.
+		var grid = new Rectangle(c.X, c.Y + th + 10, c.Width, Rows * CardH);
+		int cw = (grid.Width - 14 - (Columns - 1) * 8) / Columns;
 		if (list.Count == 0)
 		{
-			tr.DrawString("Nothing of this kind in your Academy yet.", new Vector2(x + 40, rowY + 10), Color.LightGray);
+			Ui.TextCentered(Categories[tab] == FavoritesTab ? "No favorites yet: right-click any entry in the other tabs." : "Nothing of this kind in your Academy yet.",
+				grid, Palette.TextMuted, UiFont.Medium);
 		}
-		scroll = Math.Max(0, Math.Min(Math.Max(0, list.Count - MaxRows), scroll));
-		for (int i = scroll; i < Math.Min(list.Count, scroll + MaxRows); i++)
+		int totalRows = (list.Count + Columns - 1) / Columns;
+		scroll = Math.Max(0, Math.Min(Math.Max(0, totalRows - Rows), scroll));
+		for (int vi = 0; vi < Rows * Columns; vi++)
 		{
-			Entry e = list[i];
-			int ry = rowY + (i - scroll) * RowH;
-			ui_mouseFrame rf = frames.AddFrame(x + 16, ry, PanelW - 32, RowH - 4, 21, "qol_academy_dir_row_" + (i - scroll));
-			rf.tagStringData = i.ToString();
-			rf.funcOnClick = ClickEntry;
-			rf.RemoveIfFalse = PanelOpen;
-			if (input.IsActiveFrame(rf))
+			int i = scroll * Columns + vi;
+			if (i >= list.Count)
 			{
-				selected = i;
+				break;
 			}
-			if (i == selected)
-			{
-				tr.DrawLightBox(x + 16, ry - 4, 23, 2);
-			}
-			DrawIcon(tr, e.Actor.sprite, x + 28, ry + 2, 52, 52);
-			tr.SetActiveFont(tr.fontNyala24);
-			tr.DrawString(e.Title, new Vector2(x + 96, ry + 4), i == selected ? ShepColor.Yellow : Color.White);
-			tr.SetActiveFont(tr.fontNyala18);
-			tr.DrawString(e.Kind.Purpose + (e.Kind.Status != null ? "  ^3(" + e.Kind.Status() + ")^7" : ""), new Vector2(x + 96, ry + 32), Color.LightGray);
+			var r = new Rectangle(grid.X + (vi % Columns) * (cw + 8), grid.Y + (vi / Columns) * CardH, cw, CardH - 6);
+			DrawCard(list[i], i, r);
 		}
-		// Scroll indicators (also clickable); the mouse wheel and Up/Down scroll too.
-		int indY = rowY + MaxRows * RowH + 2;
-		if (scroll > 0)
+		if (totalRows > Rows)
 		{
-			DrawScrollButton(tr, input, frames, "^ " + scroll + " more above", x + 40, indY, -1);
-		}
-		int below = list.Count - (scroll + MaxRows);
-		if (below > 0)
-		{
-			DrawScrollButton(tr, input, frames, "v " + below + " more below", x + PanelW - 240, indY, 1);
+			var track = new Rectangle(grid.Right - 6, grid.Y, 5, Rows * CardH - 6);
+			Ui.Fill(track, Palette.BarBack);
+			int thumb = Math.Max(20, track.Height * Rows / totalRows);
+			Ui.Fill(new Rectangle(track.X, track.Y + (track.Height - thumb) * scroll / Math.Max(1, totalRows - Rows), 5, thumb), Palette.Border);
 		}
 
-		// Help strip: what the selected entry is for (or what the tab is about).
-		tr.SetActiveFont(tr.fontNyala18);
-		string help = list.Count > 0 ? list[selected].Title + ": " + list[selected].Kind.Help : CategoryHelp[tab];
-		if (prepHot)
-		{
-			List<string> plan = HeroPrep.Plan();
-			help = "Prepare hero will: " + (plan.Count == 0 ? "nothing left to do for this hero." : string.Join(", ", plan) + ".")
-				+ (ProofPresets.IsEmpty(0) ? " (Save Proof preset 1 at the Battlemaster to include stat spending.)" : "");
-		}
-		Vector2 hp = new Vector2(x + 24, y + 15 * 32 + 22);
-		tr.DrawWordWrappedString("^3?^7 " + help, hp, (int)hp.X + PanelW - 48);
+		// Help strip: the selected entry, or what the tab is for.
+		var help = new Rectangle(c.X, grid.Bottom + 6, c.Width, c.Bottom - 30 - grid.Bottom - 12);
+		Ui.Panel(help, new Color(16, 12, 9, 170), Palette.Border);
+		string text = list.Count > 0 ? "^3" + list[selected].Title + ":^7 " + list[selected].Kind.Help : CategoryHelp[tab];
+		Ui.WrappedText(text, help.X + 10, help.Y + 6, help.Width - 20);
+
+		Ui.Separator(c.X, c.Bottom - 28, c.Width);
+		Ui.Text("^3Click^7 go there   ^3Right-click^7 favorite   ^3Left/Right^7 tabs   ^3P^7 prepare   ^3Esc^7 close", c.X + 4, c.Bottom - 22, Palette.TextDim);
 		tr.EndSpriteBatch();
 	}
 
-	private static void DrawScrollButton(wg2DRenderer tr, dmInput input, dmUIMouseFrameManager frames, string label, int bx, int by, int dir)
+	private static void DrawCard(Entry e, int index, Rectangle r)
 	{
-		ui_mouseFrame f = frames.AddFrame(bx - 4, by, 200, 26, 21, "qol_academy_dir_scroll_" + dir);
-		f.tagStringData = dir.ToString();
-		f.funcOnClick = ClickScroll;
-		f.RemoveIfFalse = PanelOpen;
-		tr.SetActiveFont(tr.fontNyala18);
-		tr.DrawString(label, new Vector2(bx, by + 2), input.IsActiveFrame(f) ? ShepColor.Yellow : ShepColor.Cyan);
-	}
-
-	private static void DrawIcon(wg2DRenderer tr, dmSprite sprite, int x, int y, int maxW, int maxH)
-	{
-		if (sprite.Width <= 0 || sprite.Height <= 0)
+		int slot = index - scroll * Columns;
+		ui_mouseFrame f = Ui.Area("qol_dir_card" + slot, r, () => GoTo(e), () => ToggleFavorite(e), Ui.WindowLevel + 1);
+		bool hot = Ui.Hovered(f);
+		if (hot)
 		{
-			return;
+			selected = index;
 		}
-		float scale = Math.Min(maxW / (float)sprite.Width, maxH / (float)sprite.Height);
-		int w = (int)(sprite.Width * scale), h = (int)(sprite.Height * scale);
-		tr.DrawSpriteToScreenCoordinates(sprite, x + (maxW - w) / 2, y + (maxH - h) / 2, w, h);
+		bool sel = index == selected;
+		Ui.Panel(r, sel ? Palette.PanelSelected : hot ? Palette.PanelHover : Palette.PanelRaised, sel || hot ? Palette.BorderBright : Palette.Border);
+		var icon = new Rectangle(r.X + 6, r.Y + 4, 50, r.Height - 8);
+		Ui.Fill(icon, Palette.BarBack);
+		Ui.Sprite(e.Actor.sprite, icon);
+		Ui.Text(Ui.Fit(e.Title, r.Width - 150, UiFont.Medium), r.X + 66, r.Y + 3, sel ? Palette.Accent : Palette.Text, UiFont.Medium);
+		int px = r.X + 66;
+		if (e.Kind.Status != null)
+		{
+			px = Ui.Chip(px, r.Y + 31, e.Kind.Status(), Palette.Accent);
+		}
+		Ui.Text(Ui.Fit(e.Kind.Purpose, r.Right - 40 - px), px, r.Y + 32, Palette.TextDim);
+		if (e.Kind.Use != null)
+		{
+			Ui.Chip(r.Right - 74, r.Y + 6, "1 click", Palette.Good);
+		}
+
+		// Heart: click to toggle favorite (same as right-click on the card).
+		bool fav = IsFavorite(e);
+		var heart = new Rectangle(r.Right - 30, r.Bottom - 28, 24, 24);
+		ui_mouseFrame hf = Ui.Area("qol_dir_heart" + slot, heart, () => ToggleFavorite(e), Ui.WindowLevel + 2);
+		bool hh = Ui.Hovered(hf);
+		if (fav || hh || hot)
+		{
+			Ui.Icon("ui_favorite_heart", new Rectangle(heart.X + 2, heart.Y + 2, 20, 20), fav ? (Color?)null : new Color(120, 110, 100, 200));
+		}
+		if (hh)
+		{
+			Ui.Tooltip(fav ? "Remove from favorites" : "Add to favorites");
+		}
 	}
 }

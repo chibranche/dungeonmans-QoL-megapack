@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using DungeonMans;
+using DungeonmansModKit;
 using Microsoft.Xna.Framework;
 
 namespace DungeonmansQoL;
@@ -9,7 +10,7 @@ namespace DungeonmansQoL;
 // Small window on the overworld (top right):
 //  - Academy items you carry (Proofs of Stremf, relics, books...) + "Hand in": auto-walks to the Academy, and once
 //    inside, teleports you to the Headmaster and opens his dialog (pick "I've brought some relics").
-//  - Random nearby dungeon of a chosen difficulty (Easy / Even / Hard vs your level): auto-walks there.
+//  - Random nearby dungeon: Mundane / Adventurous / Dangerous (the game's own labels vs your level): auto-walks there.
 // Auto-walking is the game's own auto-path, so normal turns and encounters happen on the way.
 internal static class OverworldHud
 {
@@ -50,6 +51,10 @@ internal static class OverworldHud
 		?? dmGazetteer.locationDictionary.GetAllLocationsOfType<GazetteerDungeonEntry>()
 			.FirstOrDefault(d => d.dungeonArchetype != null && d.dungeonArchetype.Contains("academy"));
 
+	public static bool HasItems => Game.dungeonMans != null && AcademyItems().Count > 0;
+
+	public static void HandInFromHub() => HandIn();
+
 	private static void HandIn()
 	{
 		GazetteerDungeonEntry academy = AcademyEntry();
@@ -63,13 +68,20 @@ internal static class OverworldHud
 	}
 
 	// ---- random dungeon ----
-	private enum Difficulty { Easy, Even, Hard }
+	// The game's own labels (threat - hero level, as shown when you enter an area):
+	// Trivial < -2 <= Mundane < -1 <= Adventurous < 1 <= Dangerous < 3 <= Heroic / Legendary.
+	private enum Difficulty { Mundane, Adventurous, Dangerous }
+
+	private static readonly Color MundaneColor = new Color(110, 200, 110), DangerousColor = new Color(250, 206, 92);
 
 	private static int Threat(GazetteerDungeonEntry d) =>
 		d.iThreatLevel >= 1 ? d.iThreatLevel : Game.theWorld.DetermineThreatFromLocation(d.location);
 
-	private static Difficulty Classify(int threat, int heroLevel) =>
-		threat < heroLevel - 1 ? Difficulty.Easy : threat > heroLevel + 1 ? Difficulty.Hard : Difficulty.Even;
+	private static Difficulty? Classify(int threat, int heroLevel)
+	{
+		int diff = threat - heroLevel;
+		return diff < -1 ? Difficulty.Mundane : diff < 1 ? Difficulty.Adventurous : diff < 3 ? Difficulty.Dangerous : null;
+	}
 
 	private static List<GazetteerDungeonEntry> Candidates(Difficulty diff)
 	{
@@ -90,42 +102,16 @@ internal static class OverworldHud
 		List<GazetteerDungeonEntry> list = Candidates(diff);
 		if (list.Count == 0)
 		{
-			Game.AddStringToLog("No known unfinished " + diff.ToString().ToLower() + " dungeon nearby. Explore to discover more!");
+			Game.AddStringToLog("No known unfinished " + diff + " dungeon nearby. Explore to discover more!");
 			return;
 		}
 		GazetteerDungeonEntry pick = list[dmUtilities.RandomInt() % list.Count];
-		lastPick = pick.strLocationName + " (threat " + Threat(pick) + ")";
+		lastPick = pick.strLocationName + "  (threat " + Threat(pick) + ")";
 		Game.dungeonMans.HeroAutoPathToLocation(pick.location, "Off to ^3" + pick.strLocationName + "^7 (threat " + Threat(pick) + ").");
 	}
 
 	// ---- drawing ----
-	private static readonly Dictionary<string, Action> actions = new Dictionary<string, Action>();
-
-	private static object Route(ui_mouseFrame f, int b)
-	{
-		if (actions.TryGetValue(f.tagStringData, out Action a))
-		{
-			dmAudio.PlayUIFX("ui_click_01");
-			a();
-		}
-		return true;
-	}
-
-	private static bool StillVisible(ui_mouseFrame f) => Visible(Game);
-
-	private static void Button(wg2DRenderer tr, string id, string label, int x, int y, int w, Action onClick, bool enabled = true)
-	{
-		ui_mouseFrame f = Game.theUIFrames.AddFrame(x, y, w, 24, 6, "qol_ow_" + id);
-		f.tagStringData = id;
-		f.RemoveIfFalse = StillVisible;
-		if (enabled)
-		{
-			actions[id] = onClick;
-			f.funcOnClick = Route;
-		}
-		Color c = !enabled ? Color.DarkGray : Game.theInput.IsActiveFrame(f) ? ShepColor.Yellow : ShepColor.Cyan;
-		tr.DrawString("[" + label + "]", new Vector2(x, y + 2), c);
-	}
+	private const int W = 330;
 
 	public static void Draw(dmGame g)
 	{
@@ -133,39 +119,47 @@ internal static class OverworldHud
 		{
 			return;
 		}
-		wg2DRenderer tr = g.theRenderer;
-		actions.Clear();
 		bool items = Config.On(Config.ProofReminder);
 		bool random = Config.On(Config.RandomDungeon);
-		int w = 12 * 32, units = (items ? 2 : 0) + (random ? 3 : 0);
-		int x = (int)tr.fWindowXSize - w - 112, y = 4;
-		tr.BeginSpriteBatch();
-		tr.bForceDropShadows = true;
-		tr.DrawParchmentBox(x, y, 12, units);
-		tr.SetActiveFont(tr.fontNyala18);
-		int ly = y + 8;
+		int h = 8 + (items ? 78 : 0) + (random ? 92 : 0) + (items && random ? 8 : 0);
+		var box = new Rectangle(Ui.ScreenSize.X - W - 112, 6, W, h);
+
+		g.theRenderer.BeginSpriteBatch();
+		Ui.Area("qol_ow_bg", box, null, Ui.WindowLevel - 2);
+		Ui.Panel(box, new Color(20, 15, 11, 225), Palette.Border);
+		int x = box.X + 10, y = box.Y + 8, w = W - 20;
 		if (items)
 		{
 			List<dmAcademyItem> carried = AcademyItems();
 			int proofs = carried.Where(i => i.academyUnlockType == AcademyProgressData.AcademyUnlocksEnum.PROOF_OF_STREMF).Sum(Qty);
 			int others = carried.Where(i => i.academyUnlockType != AcademyProgressData.AcademyUnlocksEnum.PROOF_OF_STREMF).Sum(Qty);
-			string text = carried.Count == 0 ? "No Academy items to hand in."
-				: "To hand in: ^3" + proofs + "^7 Proof" + (proofs == 1 ? "" : "s") + " of Stremf" + (others > 0 ? ", ^3" + others + "^7 other item" + (others == 1 ? "" : "s") : "");
-			tr.DrawString(text, new Vector2(x + 16, ly), Color.White);
-			Button(tr, "handin", pendingHandIn ? "Walking to the Academy..." : "Go hand them in", x + 16, ly + 26, 260, HandIn, carried.Count > 0);
-			ly += 64;
+			Ui.Text("ACADEMY ITEMS", x, y, Palette.Accent);
+			int cx = Ui.Chip(x + 130, y - 2, proofs + " Proof" + (proofs == 1 ? "" : "s"), proofs > 0 ? Palette.Accent : Palette.TextMuted);
+			Ui.Chip(cx, y - 2, others + " other", others > 0 ? Palette.Text : Palette.TextMuted);
+			Ui.BoxButton("qol_ow_handin", new Rectangle(x, y + 28, w, 30), pendingHandIn ? "Walking to the Academy..." : "Go hand them in", HandIn, carried.Count > 0 && !pendingHandIn,
+				tooltipText: "Walks to the Academy, then opens the Headmaster: pick \"I've brought some relics\"");
+			y += 78;
+		}
+		if (items && random)
+		{
+			Ui.Separator(x, y - 6, w);
+			y += 8;
 		}
 		if (random)
 		{
-			tr.DrawString("Random nearby dungeon:", new Vector2(x + 16, ly), Color.White);
-			Button(tr, "easy", "Easy", x + 16, ly + 26, 70, () => GoRandom(Difficulty.Easy), Candidates(Difficulty.Easy).Count > 0);
-			Button(tr, "even", "Even", x + 96, ly + 26, 70, () => GoRandom(Difficulty.Even), Candidates(Difficulty.Even).Count > 0);
-			Button(tr, "hard", "Hard", x + 176, ly + 26, 70, () => GoRandom(Difficulty.Hard), Candidates(Difficulty.Hard).Count > 0);
-			if (lastPick != "")
-			{
-				tr.DrawString(lastPick, new Vector2(x + 16, ly + 50), Color.LightGray);
-			}
+			Ui.Text("RANDOM NEARBY DUNGEON", x, y, Palette.Accent);
+			int bw = (w - 8) / 3;
+			DiffButton(Difficulty.Mundane, new Rectangle(x, y + 26, bw, 30), MundaneColor, "Threat 2+ below your level");
+			DiffButton(Difficulty.Adventurous, new Rectangle(x + bw + 4, y + 26, bw, 30), Palette.Text, "Threat around your level");
+			DiffButton(Difficulty.Dangerous, new Rectangle(x + 2 * (bw + 4), y + 26, bw, 30), DangerousColor, "Threat 1-2 above your level");
+			Ui.Text(lastPick == "" ? "Picks one of the 5 nearest unfinished ones." : Ui.Fit("Last: " + lastPick, w), x, y + 62, Palette.TextDim);
 		}
-		tr.EndSpriteBatch();
+		g.theRenderer.EndSpriteBatch();
+	}
+
+	private static void DiffButton(Difficulty d, Rectangle r, Color c, string tip)
+	{
+		int n = Candidates(d).Count;
+		Ui.BoxButton("qol_ow_" + d, r, d.ToString(), () => GoRandom(d), n > 0, tooltipText: tip + (n > 0 ? "\nKnown nearby: " + n : "\nNone known nearby"), accent: c);
 	}
 }

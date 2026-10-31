@@ -8,6 +8,7 @@ internal static class Config
 {
 	public sealed class Feature
 	{
+		public string Group;
 		public string Key;
 		public string Label;
 		public string Description;
@@ -33,41 +34,27 @@ internal static class Config
 
 	public static readonly Feature[] Features =
 	{
-		new Feature { Key = ProofsBulk, Label = "Proofs: Shift x10 / Ctrl max",
-			Description = "Battlemaster stat dialog: Shift + click/arrow changes 10 points, Ctrl goes as far as possible." },
-		new Feature { Key = ProofsPresets, Label = "Proofs: presets",
-			Description = "3 saved stat splits under the Battlemaster dialog. Shift+1-3 saves, 1-3 loads (spends every Proof in that ratio)." },
-		new Feature { Key = HatchSkipGreeting, Label = "Hatch: skip greeting",
-			Description = "Bumping Professor Hatch opens his work menu directly. His Ovomansy FAQ stays available in that menu." },
-		new Feature { Key = HatchBulk, Label = "Hatch: deposit / withdraw all",
-			Description = "Side buttons in Hatch's bird lists to move every bird at once (the equipped egg stays with you)." },
-		new Feature { Key = AcademyDirectory, Label = "Academy Directory",
-			Description = "Home key / top button in the Academy: list of everyone and everything, click to go there and open it." },
-		new Feature { Key = HeroPrep, Label = "Prepare hero button",
-			Description = "In the Academy Directory: identify scrolls & potions, learn from all teachers, spend Proofs with preset 1, empty the Warchest." },
-		new Feature { Key = MapFilters, Label = "Map: remember filters",
-			Description = "The overworld map remembers its filter buttons; cleared dungeons start hidden. Takes effect at next launch." },
-		new Feature { Key = MapTravel, Label = "Map: click to travel",
-			Description = "Click a location on the overworld map (or Enter) to auto-walk there. Normal turns and encounters still happen." },
-		new Feature { Key = Coop, Label = "The Coop (poultry window)",
-			Description = "One window for all birds: details, feeding, breeding preview, Ascend (+1 generation), Pantry storage and Feathers." },
-		new Feature { Key = BreedingFix, Label = "Fix: breeding gene bug",
-			Description = "Vanilla breeding overwrites the first parent's gene table with the egg's. With this fix, both parents keep their genes." },
-		new Feature { Key = PoultryHud, Label = "Poultry status window",
-			Description = "Small window above your hero status: equipped bird's HP, stats, powers; click to expand; Feed opens the Coop." },
-		new Feature { Key = ProofReminder, Label = "Overworld: Academy items reminder",
-			Description = "On the overworld, shows the Academy items you carry (Proofs of Stremf, relics...) with a button to walk to the Academy and hand them in." },
-		new Feature { Key = RandomDungeon, Label = "Overworld: random nearby dungeon",
-			Description = "On the overworld, pick a difficulty (easy / even / hard) and auto-walk to a random nearby unfinished dungeon of that difficulty." },
-		new Feature { Key = GameSpeed, Label = "Game speed x1/x2/x3",
-			Description = "F11 (or click the label top left) cycles x1 / x2 / x3: animations, movement and turn delays play faster." },
-		new Feature { Key = HighlightFavorites, Label = "Highlight favorite items on the floor",
-			Description = "Outlines floor items of the same type as your locked/favorite items (same outline as champions)." },
-		new Feature { Key = HideMaxedTurnIns, Label = "Headmaster: hide full Library",
-			Description = "Hides 'give books for the Library' at 101 books, when the blacksmith's crafting crit (1d100 < books) is guaranteed." },
-		new Feature { Key = OptionsLayout, Label = "Options: save buttons at bottom",
-			Description = "Moves 'Save Changes & Close' and 'Save Game and Quit' to the bottom of the options window, away from other entries." },
+		F("Academy", AcademyDirectory, "Academy Directory", "Home key or the top-right button in the Academy: every NPC and station, click to go there."),
+		F("Academy", HeroPrep, "Prepare hero button", "One click: identify scrolls & potions, learn from teachers, spend Proofs (preset 1), Warchest, bookstands, favorite bird."),
+		F("Academy", ProofsBulk, "Proofs: Shift x10 / Ctrl max", "Battlemaster stats: Shift = 10 points, Ctrl = as many as possible."),
+		F("Academy", ProofsPresets, "Proofs: 3 presets", "Shift+1-3 saves a stat split, 1-3 spends every Proof in that ratio."),
+		F("Academy", HideMaxedTurnIns, "Hide 'give books' at 101 books", "The Headmaster stops offering the Library option once crafting crits are guaranteed."),
+		F("Poultry", Coop, "The Coop window", "Birds, feeding, breeding preview, Ascend (+1 generation), Pantry and Feathers."),
+		F("Poultry", PoultryHud, "Bird status window", "Equipped bird: HP, stats, powers. Drag it anywhere; click - / + to fold."),
+		F("Poultry", BreedingFix, "Fix: breeding gene bug", "Vanilla overwrites the first parent's genes with the egg's. Fixed: both parents keep theirs."),
+		F("Poultry", HatchSkipGreeting, "Hatch: skip greeting", "Bumping Hatch opens his work menu directly."),
+		F("Poultry", HatchBulk, "Hatch: deposit / withdraw all", "One button to move every bird (your equipped egg stays)."),
+		F("Overworld", MapTravel, "Map: click to travel", "Click a map location (or Enter) to auto-walk there."),
+		F("Overworld", MapFilters, "Map: remember filters", "Filters are kept; cleared dungeons start hidden. Next launch."),
+		F("Overworld", ProofReminder, "Academy items reminder", "Shows the Academy items you carry, with a button to go hand them in."),
+		F("Overworld", RandomDungeon, "Random nearby dungeon", "Easy / Even / Hard: walk to a random nearby unfinished dungeon."),
+		F("Dungeons", HighlightFavorites, "Outline favorite floor items", "Floor items matching your locked / favorite items get the champion outline."),
+		F("General", GameSpeed, "Game speed x1 / x2 / x3", "Speed button top left, F11, or the Options menu. Animations and turn delays play faster."),
+		F("General", OptionsLayout, "Options: save buttons at bottom", "Moves 'Save Changes & Close' and 'Save Game and Quit' away from other entries."),
 	};
+
+	private static Feature F(string group, string key, string label, string description) =>
+		new Feature { Group = group, Key = key, Label = label, Description = description };
 
 	private static ModSettings settings;
 
@@ -77,7 +64,7 @@ internal static class Config
 		settings = s;
 		foreach (Feature f in Features)
 		{
-			s.AddToggle(f.Key, f.Label, f.Description);
+			s.AddToggle(f.Key, f.Label, f.Description, group: f.Group);
 		}
 	}
 
