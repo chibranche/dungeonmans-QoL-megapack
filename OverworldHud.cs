@@ -111,7 +111,7 @@ internal static class OverworldHud
 	}
 
 	// ---- drawing ----
-	private const int W = 330;
+	private const int W = 320;
 
 	public static void Draw(dmGame g)
 	{
@@ -121,38 +121,35 @@ internal static class OverworldHud
 		}
 		bool items = Config.On(Config.ProofReminder);
 		bool random = Config.On(Config.RandomDungeon);
-		int h = 8 + (items ? 78 : 0) + (random ? 92 : 0) + (items && random ? 8 : 0);
-		var box = new Rectangle(Ui.ScreenSize.X - W - 112, 6, W, h);
+		int h = (items ? 96 : 0) + (random ? 128 : 0);
+		var box = new Rectangle(Ui.ScreenSize.X - W - 112, 48, W, h);
 
 		g.theRenderer.BeginSpriteBatch();
 		Ui.Area("qol_ow_bg", box, null, Ui.WindowLevel - 2);
-		Ui.Panel(box, new Color(20, 15, 11, 225), Palette.Border);
-		int x = box.X + 10, y = box.Y + 8, w = W - 20;
+		Ui.Box(box);
+		int x = box.X + 14, y = box.Y + 10, w = W - 28;
 		if (items)
 		{
 			List<dmAcademyItem> carried = AcademyItems();
 			int proofs = carried.Where(i => i.academyUnlockType == AcademyProgressData.AcademyUnlocksEnum.PROOF_OF_STREMF).Sum(Qty);
 			int others = carried.Where(i => i.academyUnlockType != AcademyProgressData.AcademyUnlocksEnum.PROOF_OF_STREMF).Sum(Qty);
-			Ui.Text("ACADEMY ITEMS", x, y, Palette.Accent);
-			int cx = Ui.Chip(x + 130, y - 2, proofs + " Proof" + (proofs == 1 ? "" : "s"), proofs > 0 ? Palette.Accent : Palette.TextMuted);
-			Ui.Chip(cx, y - 2, others + " other", others > 0 ? Palette.Text : Palette.TextMuted);
-			Ui.BoxButton("qol_ow_handin", new Rectangle(x, y + 28, w, 30), pendingHandIn ? "Walking to the Academy..." : "Go hand them in", HandIn, carried.Count > 0 && !pendingHandIn,
+			Ui.Text("Academy items", x, y, Palette.Accent, UiFont.Medium);
+			Ui.TextRight("^3" + proofs + "^7 Proof" + (proofs == 1 ? "" : "s") + "   ^3" + others + "^7 other", x + w, y + 4, Palette.TextDim);
+			Ui.BoxButton("qol_ow_handin", new Rectangle(x, y + 36, w, 32), pendingHandIn ? "Walking to the Academy..." : "Go hand them in", HandIn, carried.Count > 0 && !pendingHandIn,
 				tooltipText: "Walks to the Academy, then opens the Headmaster: pick \"I've brought some relics\"");
-			y += 78;
+			y += 86;
 		}
 		if (items && random)
 		{
 			Ui.Separator(x, y - 6, w);
-			y += 8;
 		}
 		if (random)
 		{
-			Ui.Text("RANDOM NEARBY DUNGEON", x, y, Palette.Accent);
-			int bw = (w - 8) / 3;
-			DiffButton(Difficulty.Mundane, new Rectangle(x, y + 26, bw, 30), MundaneColor, "Threat 2+ below your level");
-			DiffButton(Difficulty.Adventurous, new Rectangle(x + bw + 4, y + 26, bw, 30), Palette.Text, "Threat around your level");
-			DiffButton(Difficulty.Dangerous, new Rectangle(x + 2 * (bw + 4), y + 26, bw, 30), DangerousColor, "Threat 1-2 above your level");
-			Ui.Text(lastPick == "" ? "Picks one of the 5 nearest unfinished ones." : Ui.Fit("Last: " + lastPick, w), x, y + 62, Palette.TextDim);
+			Ui.Text("Random nearby dungeon", x, y, Palette.Accent, UiFont.Medium);
+			DiffButton(Difficulty.Mundane, new Rectangle(x, y + 36, 96, 32), MundaneColor, "Threat 2+ below your level");
+			DiffButton(Difficulty.Adventurous, new Rectangle(x + 100, y + 36, 96, 32), Palette.Text, "Threat around your level");
+			DiffButton(Difficulty.Dangerous, new Rectangle(x + 200, y + 36, 96, 32), DangerousColor, "Threat 1-2 above your level");
+			Ui.Text(lastPick == "" ? "One of the 5 nearest unfinished ones." : Ui.Fit("Last: " + lastPick, w), x, y + 76, Palette.TextDim);
 		}
 		g.theRenderer.EndSpriteBatch();
 	}

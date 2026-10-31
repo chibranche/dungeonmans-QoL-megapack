@@ -430,7 +430,7 @@ internal static class AcademyDirectory
 			{
 				g.theRenderer.BeginSpriteBatch();
 				// Left of the game's own 80px top-right icon.
-				var r = new Rectangle(Ui.ScreenSize.X - 112 - 240, 6, 240, 34);
+				var r = new Rectangle(Ui.ScreenSize.X - 112 - 256, 8, 256, 32);
 				Ui.BoxButton("qol_dir_open", r, "Academy Directory", Open, font: UiFont.Medium, tooltipText: "Everyone and everything in the Academy (Home)", stackLevel: 6);
 				g.theRenderer.EndSpriteBatch();
 			}
@@ -450,7 +450,7 @@ internal static class AcademyDirectory
 
 		tr.BeginSpriteBatch();
 		tr.bForceDropShadows = true;
-		Rectangle c = Ui.ModalWindow("qol_dir", 26, 16, "Academy Directory", Close);
+		Rectangle c = Ui.ModalWindow("qol_dir", 26, 18, "Academy Directory", Close);
 
 		// Prepare hero, in the title bar.
 		if (Config.On(Config.HeroPrep))
@@ -461,7 +461,7 @@ internal static class AcademyDirectory
 			{
 				tip += "\n(Save Proof preset 1 at the Battlemaster to include stats.)";
 			}
-			Ui.BoxButton("qol_dir_prep", new Rectangle(c.Right - 250, c.Y - 52, 196, 30), "Prepare hero  (P)", Prepare, plan.Count > 0,
+			Ui.BoxButton("qol_dir_prep", new Rectangle(c.Right - 300, c.Y - 52, 224, 32), "Prepare hero  (P)", Prepare, plan.Count > 0,
 				tooltipText: tip, accent: Palette.Good, stackLevel: Ui.WindowLevel + 2);
 		}
 
@@ -472,7 +472,7 @@ internal static class AcademyDirectory
 
 		// Cards grid.
 		var grid = new Rectangle(c.X, c.Y + th + 10, c.Width, Rows * CardH);
-		int cw = (grid.Width - 14 - (Columns - 1) * 8) / Columns;
+		const int cw = 384;
 		if (list.Count == 0)
 		{
 			Ui.TextCentered(Categories[tab] == FavoritesTab ? "No favorites yet: right-click any entry in the other tabs." : "Nothing of this kind in your Academy yet.",
@@ -487,7 +487,7 @@ internal static class AcademyDirectory
 			{
 				break;
 			}
-			var r = new Rectangle(grid.X + (vi % Columns) * (cw + 8), grid.Y + (vi / Columns) * CardH, cw, CardH - 6);
+			var r = new Rectangle(grid.X + (vi % Columns) * (cw + 8), grid.Y + (vi / Columns) * CardH, cw, CardH);
 			DrawCard(list[i], i, r);
 		}
 		if (totalRows > Rows)
@@ -499,10 +499,9 @@ internal static class AcademyDirectory
 		}
 
 		// Help strip: the selected entry, or what the tab is for.
-		var help = new Rectangle(c.X, grid.Bottom + 6, c.Width, c.Bottom - 30 - grid.Bottom - 12);
-		Ui.Panel(help, new Color(16, 12, 9, 170), Palette.Border);
+		Rectangle help = Ui.Box(new Rectangle(c.X, grid.Bottom + 8, 776, 64));
 		string text = list.Count > 0 ? "^3" + list[selected].Title + ":^7 " + list[selected].Kind.Help : CategoryHelp[tab];
-		Ui.WrappedText(text, help.X + 10, help.Y + 6, help.Width - 20);
+		Ui.WrappedText(text, help.X + 14, help.Y + 10, help.Width - 28);
 
 		Ui.Separator(c.X, c.Bottom - 28, c.Width);
 		Ui.Text("^3Click^7 go there   ^3Right-click^7 favorite   ^3Left/Right^7 tabs   ^3P^7 prepare   ^3Esc^7 close", c.X + 4, c.Bottom - 22, Palette.TextDim);
@@ -519,25 +518,21 @@ internal static class AcademyDirectory
 			selected = index;
 		}
 		bool sel = index == selected;
-		Ui.Panel(r, sel ? Palette.PanelSelected : hot ? Palette.PanelHover : Palette.PanelRaised, sel || hot ? Palette.BorderBright : Palette.Border);
-		var icon = new Rectangle(r.X + 6, r.Y + 4, 50, r.Height - 8);
-		Ui.Fill(icon, Palette.BarBack);
-		Ui.Sprite(e.Actor.sprite, icon);
-		Ui.Text(Ui.Fit(e.Title, r.Width - 150, UiFont.Medium), r.X + 66, r.Y + 3, sel ? Palette.Accent : Palette.Text, UiFont.Medium);
+		Ui.Box(r, sel || hot);
+		Ui.Sprite(e.Actor.sprite, new Rectangle(r.X + 8, r.Y + 6, 48, r.Height - 12));
+		Ui.Text(Ui.Fit(e.Title, r.Width - 110, UiFont.Medium), r.X + 66, r.Y + 6, sel ? Palette.Accent : Palette.Text, UiFont.Medium);
 		int px = r.X + 66;
 		if (e.Kind.Status != null)
 		{
-			px = Ui.Chip(px, r.Y + 31, e.Kind.Status(), Palette.Accent);
+			string st = e.Kind.Status();
+			Ui.Text("^3" + st, px, r.Y + 34, Palette.Text);
+			px += (int)Ui.Measure(st).X + 10;
 		}
-		Ui.Text(Ui.Fit(e.Kind.Purpose, r.Right - 40 - px), px, r.Y + 32, Palette.TextDim);
-		if (e.Kind.Use != null)
-		{
-			Ui.Chip(r.Right - 74, r.Y + 6, "1 click", Palette.Good);
-		}
+		Ui.Text(Ui.Fit(e.Kind.Purpose, r.Right - 40 - px), px, r.Y + 34, Palette.TextDim);
 
 		// Heart: click to toggle favorite (same as right-click on the card).
 		bool fav = IsFavorite(e);
-		var heart = new Rectangle(r.Right - 30, r.Bottom - 28, 24, 24);
+		var heart = new Rectangle(r.Right - 34, r.Y + 8, 24, 24);
 		ui_mouseFrame hf = Ui.Area("qol_dir_heart" + slot, heart, () => ToggleFavorite(e), Ui.WindowLevel + 2);
 		bool hh = Ui.Hovered(hf);
 		if (fav || hh || hot)

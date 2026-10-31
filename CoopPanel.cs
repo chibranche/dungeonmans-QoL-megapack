@@ -7,13 +7,13 @@ using Microsoft.Xna.Framework;
 
 namespace DungeonmansQoL;
 
-// "The Coop": one window for all poultry management (game logic in PoultryCore).
+// "The Coop": one window for all poultry management (game logic in PoultryCore). Drawn with the game's own UI
+// pieces (parchment window, text boxes, steel buttons, vitals bars, sliders, item sprites, Official Bird Paper)
+// on the game's 32-pixel grid.
 //   Birds  - bird cards on the left; on the right the selected bird: actions, stat map, powers & genes, feeding.
 //   Breed  - pick two parents; exact preview of the egg (generation, Pluck, stats, chance of each power).
 //   Ascend - +1 generation for N Passionate Poultices; Pluck after = Pluck - floor(Pluck * 0.5^N).
 //   Pantry - Academy storage for steaks, Plumage and poultices; render steaks into Feathers; Feathers shop.
-// Opens from Hatch's menu, the Academy Directory or the bird status window. Away from the Academy only bag
-// contents are available.
 internal static class CoopPanel
 {
 	public static bool IsOpen;
@@ -65,7 +65,8 @@ internal static class CoopPanel
 		{
 			message = s;
 			Game.AddStringToLog("^3Coop:^7 " + s);
-			Ui.Toast(Ui.StripCodes(s).Length > 70 ? Ui.StripCodes(s).Substring(0, 67) + "..." : s);
+			string plain = Ui.StripCodes(s);
+			Ui.Toast(plain.Length > 70 ? plain.Substring(0, 67) + "..." : s);
 		}
 	}
 
@@ -155,9 +156,40 @@ internal static class CoopPanel
 		return birds.ToList();
 	}
 
+	// ---------------- item icons ----------------
+
+	private static readonly Dictionary<string, dmSprite> itemSprites = new Dictionary<string, dmSprite>();
+
+	private static dmSprite ArchetypeSprite(string archetype)
+	{
+		if (!itemSprites.TryGetValue(archetype, out dmSprite sp))
+		{
+			try
+			{
+				sp = Game.SpawnItemFromArchetype(archetype)?.sprite ?? default;
+			}
+			catch
+			{
+				sp = default;
+			}
+			itemSprites[archetype] = sp;
+		}
+		return sp;
+	}
+
+	// Pantry key: s|... steak, p|... Plumage, i|archetype item.
+	private static dmSprite KeySprite(string key) =>
+		key.StartsWith("s|") ? Ui.GameSprite("enemy_bird_steak_sprite")
+		: key.StartsWith("p|") ? Ui.GameSprite("plumage_of_power_sprite")
+		: ArchetypeSprite(key.Substring(2));
+
+	private static dmSprite FoodSprite(PoultryCore.Food f) =>
+		f.BagItem != null ? f.BagItem.sprite : f.IsPlumage ? Ui.GameSprite("plumage_of_power_sprite") : Ui.GameSprite("enemy_bird_steak_sprite");
+
 	// ---------------- drawing ----------------
 
-	private const int WUnits = 38, HUnits = 21;
+	private const int WUnits = 38, HUnits = 22;
+	private const int ListW = 384, CardH = 64;
 
 	public static void Draw(dmGame g)
 	{
@@ -169,17 +201,16 @@ internal static class CoopPanel
 		previewFood = null;
 		tr.BeginSpriteBatch();
 		tr.bForceDropShadows = true;
-		Rectangle c = Ui.ModalWindow("qol_coop", WUnits, HUnits, "The Coop", Close, AtAcademy ? null : "bags only (away from the Academy)");
+		Rectangle c = Ui.ModalWindow("qol_coop", WUnits, HUnits, "The Coop", Close, AtAcademy ? null : "bags only");
 
-		// Tabs + currencies.
-		int th = Ui.Tabs("qol_coop", c.X, c.Y, Tabs, tab, SetTab, new[] { true, true, true, AtAcademy });
+		Ui.Tabs("qol_coop", c.X, c.Y, Tabs, tab, SetTab, new[] { true, true, true, AtAcademy });
 		int cx = c.Right;
-		cx = ChipRight(cx, c.Y + 6, "Pruning " + PoultryCore.Count(PoultryCore.Pruning), Palette.TextDim, "Pruning Poultices: forget a power");
-		cx = ChipRight(cx, c.Y + 6, "Passionate " + PoultryCore.Count(PoultryCore.Passionate), PoultryHud.Melee, "Passionate Poultices: breeding and Ascend");
-		ChipRight(cx, c.Y + 6, "Feathers " + PoultryCore.Feathers, Palette.Accent, "Feathers: earned by freeing birds, rendering steaks, selling poultices");
+		cx = Currency(cx, c.Y + 6, "Pruning", PoultryCore.Count(PoultryCore.Pruning), Palette.TextDim, "Pruning Poultices: make a bird forget a power");
+		cx = Currency(cx, c.Y + 6, "Passionate", PoultryCore.Count(PoultryCore.Passionate), PoultryHud.Melee, "Passionate Poultices: breeding and Ascend");
+		Currency(cx, c.Y + 6, "Feathers", PoultryCore.Feathers, Palette.Accent, "Feathers: from freeing birds, rendering steaks, selling poultices");
 
-		var body = new Rectangle(c.X, c.Y + th + 10, c.Width, c.Height - th - 10 - 34);
-		var right = new Rectangle(body.X + ListW + 12, body.Y, body.Width - ListW - 12, body.Height);
+		var body = new Rectangle(c.X, c.Y + 44, c.Width, c.Height - 44 - 32);
+		var right = new Rectangle(body.X + ListW + 16, body.Y, 768, body.Height);
 		switch (tab)
 		{
 		case 0:
@@ -199,71 +230,59 @@ internal static class CoopPanel
 			break;
 		}
 
-		Ui.Separator(c.X, c.Bottom - 28, c.Width);
+		Ui.Separator(c.X, c.Bottom - 26, c.Width);
 		Ui.Text(string.IsNullOrEmpty(message) ? "^3Left/Right^7 tabs   ^3Up/Down^7 birds   ^3Wheel^7 scroll   ^3Esc^7 close" : message,
-			c.X + 4, c.Bottom - 22, Palette.TextDim);
+			c.X + 4, c.Bottom - 20, Palette.TextDim);
 		tr.EndSpriteBatch();
 		previewFoodLast = previewFood;
 	}
 
-	private static int ChipRight(int right, int y, string text, Color color, string tip)
+	private static int Currency(int right, int y, string name, int value, Color color, string tip)
 	{
-		int w = (int)Ui.Measure(text).X + 12;
+		string text = name + " ^3" + value + "^7";
+		int w = (int)Ui.Measure(text, UiFont.Medium).X;
 		int x = right - w;
-		ui_mouseFrame f = Ui.Area("qol_coop_chip_" + text.Split(' ')[0], new Rectangle(x, y, w, 22), null, Ui.WindowLevel + 1);
-		Ui.Chip(x, y, text, color);
+		ui_mouseFrame f = Ui.Area("qol_coop_cur_" + name, new Rectangle(x, y, w, 24), null, Ui.WindowLevel + 1);
+		Ui.Text(text, x, y, color, UiFont.Medium);
 		if (Ui.Hovered(f))
 		{
 			Ui.Tooltip(tip);
 		}
-		return x - 8;
+		return x - 24;
 	}
 
 	// ---------- bird list (left column) ----------
 
 	private enum BirdClick { Select, Parent }
 
-	private const int ListW = 372, CardH = 62;
-
 	private static void DrawBirdList(Rectangle body, BirdClick mode)
 	{
 		List<dmBirdEgg> birds = VisibleBirds();
 		int x = body.X, y = body.Y;
-		Ui.Text("Sort", x, y + 4, Palette.TextDim);
 		string[] sorts = { "Gen", "Pluck", "Name" };
-		int sx = x + 40;
 		for (int i = 0; i < sorts.Length; i++)
 		{
 			int s = i;
-			Ui.BoxButton("qol_coop_sort" + i, new Rectangle(sx, y, 64, 26), sorts[i], () => sortMode = s, selected: sortMode == i);
-			sx += 68;
+			Ui.BoxButton("qol_coop_sort" + i, new Rectangle(x + i * 68, y, 64, 32), sorts[i], () => sortMode = s, selected: sortMode == i,
+				tooltipText: "Sort by " + sorts[i].ToLowerInvariant());
 		}
-		Ui.TextRight(birds.Count + " bird" + (birds.Count == 1 ? "" : "s"), x + ListW, y + 4, Palette.TextDim);
+		Ui.TextRight(birds.Count + " bird" + (birds.Count == 1 ? "" : "s"), x + ListW, y + 6, Palette.TextDim);
 
-		var list = new Rectangle(x, y + 34, ListW, body.Height - 34);
+		var list = new Rectangle(x, y + 40, ListW, body.Height - 40);
 		int rows = list.Height / CardH;
 		birdScroll = Math.Max(0, Math.Min(Math.Max(0, birds.Count - rows), birdScroll));
 		for (int vi = 0; vi < rows && birdScroll + vi < birds.Count; vi++)
 		{
-			DrawBirdCard(birds[birdScroll + vi], new Rectangle(x, list.Y + vi * CardH, ListW - 12, CardH - 6), mode, vi);
+			DrawBirdCard(birds[birdScroll + vi], new Rectangle(x, list.Y + vi * CardH, ListW, CardH), mode, vi);
 		}
 		if (birds.Count == 0)
 		{
 			Ui.TextCentered("No birds here.", list, Palette.TextDim, UiFont.Medium);
 		}
-		Scrollbar(new Rectangle(x + ListW - 7, list.Y, 5, rows * CardH - 6), birdScroll, rows, birds.Count);
-	}
-
-	private static void Scrollbar(Rectangle track, int first, int visible, int total)
-	{
-		if (total <= visible)
+		if (birds.Count > rows)
 		{
-			return;
+			Ui.TextRight((birdScroll + 1) + "-" + Math.Min(birds.Count, birdScroll + rows) + " of " + birds.Count + "  (wheel)", x + ListW, list.Y + rows * CardH + 2, Palette.TextMuted);
 		}
-		Ui.Fill(track, Palette.BarBack);
-		int th = Math.Max(20, track.Height * visible / total);
-		int ty = track.Y + (track.Height - th) * first / Math.Max(1, total - visible);
-		Ui.Fill(new Rectangle(track.X, ty, track.Width, th), Palette.Border);
 	}
 
 	private static void DrawBirdCard(dmBirdEgg e, Rectangle r, BirdClick mode, int slot)
@@ -271,43 +290,23 @@ internal static class CoopPanel
 		bool isSel = mode == BirdClick.Select ? e == selected : e == parentA || e == parentB;
 		ui_mouseFrame f = Ui.Area("qol_coop_card" + slot, r, () => ClickBird(e, mode), Ui.WindowLevel + 1);
 		bool hot = Ui.Hovered(f);
-		Ui.Panel(r, isSel ? Palette.PanelSelected : hot ? Palette.PanelHover : Palette.PanelRaised, isSel || hot ? Palette.BorderBright : Palette.Border);
-		if (PoultryCore.IsEquipped(e))
-		{
-			Ui.Fill(new Rectangle(r.X, r.Y, 4, r.Height), Palette.Info);
-		}
+		Ui.Box(r, isSel || hot);
+		Ui.Sprite(e.GetBirdSprite(), new Rectangle(r.X + 10, r.Y + 8, 40, 48), e.BirdHasEverHatched ? (Color?)null : new Color(120, 120, 120));
 
-		var portrait = new Rectangle(r.X + 8, r.Y + 5, 46, r.Height - 10);
-		Ui.Fill(portrait, Palette.BarBack);
-		Ui.Sprite(e.GetBirdSprite(), portrait, e.BirdHasEverHatched ? (Color?)null : new Color(120, 120, 120));
-
-		int tx = r.X + 62;
+		int tx = r.X + 60;
 		if (e.BirdName == PoultryCore.FavoriteName)
 		{
-			Ui.Icon("ui_favorite_heart", new Rectangle(tx, r.Y + 7, 18, 18));
+			Ui.Icon("ui_favorite_heart", new Rectangle(tx, r.Y + 9, 18, 18));
 			tx += 22;
 		}
-		Ui.Text(Ui.Fit(e.BirdName, r.Right - 70 - tx, UiFont.Medium), tx, r.Y + 3, isSel ? Palette.Accent : Palette.Text, UiFont.Medium);
-
-		int cx = r.X + 62, cy = r.Y + 31;
-		cx = Ui.Chip(cx, cy, "G" + e.GetGeneration(), Palette.Accent);
-		cx = Ui.Chip(cx, cy, "P" + e.GetChampionPoints(), Palette.Text);
-		cx = PoultryCore.IsEquipped(e) ? Ui.Chip(cx, cy, "Equipped", Palette.Info) : Ui.Chip(cx, cy, PoultryCore.InBag(e) ? "Bag" : "Academy", Palette.TextDim);
-		if (e.GetStatInfo().bWounded)
-		{
-			cx = Ui.Chip(cx, cy, "Hurt", Palette.Bad);
-		}
-		if (!e.BirdHasEverHatched)
-		{
-			Ui.Chip(cx, cy, "Egg", Palette.TextMuted);
-		}
-		if (mode == BirdClick.Parent && (e == parentA || e == parentB))
-		{
-			Ui.Chip(r.Right - 96, r.Y + 6, e == parentA ? "P1" : "P2", Palette.Accent);
-		}
+		Ui.Text(Ui.Fit(e.BirdName, r.Right - 70 - tx, UiFont.Medium), tx, r.Y + 6, isSel ? Palette.Accent : Palette.Text, UiFont.Medium);
+		string where = PoultryCore.IsEquipped(e) ? "^5Equipped" : PoultryCore.InBag(e) ? "^7Bag" : "^7Academy";
+		string extra = (e.GetStatInfo().bWounded ? "   ^1Hurt" : "") + (!e.BirdHasEverHatched ? "   ^7Egg" : "")
+			+ (mode == BirdClick.Parent && e == parentA ? "   ^3P1" : mode == BirdClick.Parent && e == parentB ? "   ^3P2" : "");
+		Ui.Text("Gen ^3" + e.GetGeneration() + "^7  Pluck ^3" + e.GetChampionPoints() + "^7   " + where + "^7" + extra, r.X + 60, r.Y + 34, Palette.TextDim);
 
 		Point s = e.GetStatAxis();
-		StatMap(new Rectangle(r.Right - 52, r.Y + (r.Height - 44) / 2, 44, 44), new[] { (s.X, s.Y, Palette.Accent) }, mini: true);
+		StatMap(new Rectangle(r.Right - 56, r.Y + 10, 44, 44), new[] { (s.X, s.Y, Color.White) }, mini: true);
 	}
 
 	private static void ClickBird(dmBirdEgg e, BirdClick mode)
@@ -350,28 +349,21 @@ internal static class CoopPanel
 	// Gold corners: stat powers. Red band (Melee 3+): Press the Attack.
 	private static void StatMap(Rectangle r, IEnumerable<(int x, int y, Color c)> dots, bool mini = false, (int x, int y)? ghost = null)
 	{
-		Ui.Fill(r, Palette.BarBack);
+		Ui.Fill(r, new Color(14, 10, 8, 230));
 		float cw = r.Width / 11f, ch = r.Height / 11f;
 		Rectangle Cell(int sx, int sy) => new Rectangle(r.X + (int)((sx + 5) * cw), r.Y + (int)((sy + 5) * ch), (int)Math.Ceiling(cw), (int)Math.Ceiling(ch));
 		for (int sx = -5; sx <= 5; sx++)
 		{
-			for (int sy = 3; sy <= 5; sy++)
+			for (int sy = -5; sy <= 5; sy++)
 			{
-				Ui.Fill(Cell(sx, sy), new Color((int)PoultryHud.Melee.R, PoultryHud.Melee.G, PoultryHud.Melee.B, 34));
+				bool zone = StatZones.Any(z => sx >= z.x0 && sx <= z.x1 && sy >= z.y0 && sy <= z.y1);
+				Color c = zone ? new Color(220, 170, 70, 110) : sy >= 3 ? new Color(200, 80, 60, 80) : (sx + sy) % 2 == 0 ? new Color(70, 56, 42, 90) : new Color(50, 40, 30, 90);
+				Rectangle cell = Cell(sx, sy);
+				Ui.Fill(mini ? cell : new Rectangle(cell.X, cell.Y, cell.Width - 1, cell.Height - 1), c);
 			}
 		}
-		foreach (var z in StatZones)
-		{
-			for (int sx = z.x0; sx <= z.x1; sx++)
-			{
-				for (int sy = z.y0; sy <= z.y1; sy++)
-				{
-					Ui.Fill(Cell(sx, sy), new Color(250, 206, 92, 50));
-				}
-			}
-		}
-		Ui.Fill(new Rectangle(r.X + r.Width / 2, r.Y, 1, r.Height), new Color(255, 255, 255, 40));
-		Ui.Fill(new Rectangle(r.X, r.Y + r.Height / 2, r.Width, 1), new Color(255, 255, 255, 40));
+		Ui.Fill(new Rectangle(r.X + r.Width / 2, r.Y, 1, r.Height), new Color(255, 240, 210, 70));
+		Ui.Fill(new Rectangle(r.X, r.Y + r.Height / 2, r.Width, 1), new Color(255, 240, 210, 70));
 		Ui.Outline(r, Palette.Border);
 		if (ghost.HasValue)
 		{
@@ -381,8 +373,8 @@ internal static class CoopPanel
 		foreach (var d in dots)
 		{
 			Rectangle dc = Cell(Math.Clamp(d.x, -5, 5), Math.Clamp(d.y, -5, 5));
-			int pad = mini ? 0 : 1;
-			Ui.Fill(new Rectangle(dc.X + pad, dc.Y + pad, dc.Width - pad * 2, dc.Height - pad * 2), d.c);
+			Ui.Fill(new Rectangle(dc.X - 1, dc.Y - 1, dc.Width + 2, dc.Height + 2), Color.Black);
+			Ui.Fill(dc, d.c);
 		}
 	}
 
@@ -407,26 +399,23 @@ internal static class CoopPanel
 
 	private static void StatRows(int x, int y, int w, int t, int m, int pluck, int gen, string id)
 	{
-		Row(id + "_tvs", x, y, w, "Tough", "Swift", t, PoultryHud.Tough, PoultryHud.Swift, PoultryHud.ToughSwiftHelp(t, pluck));
-		Row(id + "_mvr", x, y + 26, w, "Ranged", "Melee", m, PoultryHud.Ranged, PoultryHud.Melee, PoultryHud.RangedMeleeHelp(m, gen));
-
-		static void Row(string id, int x, int y, int w, string neg, string pos, int v, Color nc, Color pc, string help)
-		{
-			ui_mouseFrame f = Ui.Area(id, new Rectangle(x, y, w, 22), null, Ui.WindowLevel + 1);
-			Ui.Text(neg + (v < 0 ? " " + -v : ""), x, y + 1, v < 0 ? nc : Palette.TextMuted);
-			Ui.TextRight((v > 0 ? v + " " : "") + pos, x + w, y + 1, v > 0 ? pc : Palette.TextMuted);
-			Ui.CenterBar(new Rectangle(x + 78, y + 3, w - 156, 16), v, 5, nc, pc);
-			if (Ui.Hovered(f))
-			{
-				Ui.Tooltip(help);
-			}
-		}
+		PoultryHud.StatRow(id + "_tvs", x, y, w, "Tough", "Swift", t, PoultryHud.Tough, PoultryHud.Swift, PoultryHud.ToughSwiftHelp(t, pluck));
+		PoultryHud.StatRow(id + "_mvr", x, y + PoultryHud.StatRowHeight, w, "Ranged", "Melee", m, PoultryHud.Ranged, PoultryHud.Melee, PoultryHud.RangedMeleeHelp(m, gen));
 	}
 
-	private static void Section(Rectangle r, string title)
+	private static Rectangle Section(Rectangle r, string title)
 	{
-		Ui.Panel(r, new Color(16, 12, 9, 170), Palette.Border);
-		Ui.Text(title.ToUpperInvariant(), r.X + 10, r.Y + 6, Palette.Accent);
+		Rectangle b = Ui.Box(r);
+		Ui.Text(title, b.X + 12, b.Y + 6, Palette.Accent, UiFont.Medium);
+		return b;
+	}
+
+	// The bird's portrait on the game's Official Bird Paper.
+	private static void Portrait(dmBirdEgg e, Rectangle r)
+	{
+		Ui.Icon("ui_official_bird_paper", r);
+		Ui.Sprite(e.GetBirdSprite(), new Rectangle(r.X + r.Width / 6, r.Y + r.Height / 10, r.Width * 2 / 3, r.Height * 7 / 10),
+			e.BirdHasEverHatched ? (Color?)null : new Color(120, 120, 120));
 	}
 
 	// ---------- Birds tab ----------
@@ -443,165 +432,139 @@ internal static class CoopPanel
 		dmPetBird placed = PoultryCore.Placed(e);
 		int x = area.X, y = area.Y;
 
-		// Header card: portrait, name, chips, actions, HP.
-		var head = new Rectangle(x, y, area.Width, 112);
-		Ui.Panel(head, Palette.PanelRaised, Palette.Border);
-		var portrait = new Rectangle(x + 8, y + 8, 72, 96);
-		Ui.Fill(portrait, Palette.BarBack);
-		Ui.Sprite(e.GetBirdSprite(), portrait);
+		// Header: portrait on bird paper, name, facts, actions, HP.
+		Portrait(e, new Rectangle(x, y, 198, 120));
 		bool fav = e.BirdName == PoultryCore.FavoriteName;
-		Ui.Text(e.BirdName, x + 92, y + 4, Palette.Text, UiFont.Large);
-		int cx = x + 92, cy = y + 42;
-		cx = Ui.Chip(cx, cy, "Generation " + e.GetGeneration(), Palette.Accent);
-		cx = Ui.Chip(cx, cy, "Pluck " + e.GetChampionPoints(), Palette.Text);
-		cx = Ui.Chip(cx, cy, "Level " + e.BirdLevel, Palette.TextDim);
-		cx = Ui.Chip(cx, cy, PoultryCore.IsEquipped(e) ? "Equipped" : PoultryCore.InBag(e) ? "In your bags" : "At the Academy", PoultryCore.IsEquipped(e) ? Palette.Info : Palette.TextDim);
-		if (info.bWounded)
+		int hx = x + 212;
+		if (fav)
 		{
-			cx = Ui.Chip(cx, cy, "Wounded", Palette.Bad);
+			Ui.Icon("ui_favorite_heart", new Rectangle(hx, y + 8, 22, 22));
+			hx += 28;
 		}
-		if (!e.BirdHasEverHatched)
+		Ui.Text(e.BirdName, hx, y, Palette.Text, UiFont.Large);
+		string where = PoultryCore.IsEquipped(e) ? "^5Equipped^7" : PoultryCore.InBag(e) ? "In your bags" : "At the Academy";
+		Ui.Text("Generation ^3" + e.GetGeneration() + "^7    Pluck ^3" + e.GetChampionPoints() + "^7    Level ^3" + e.BirdLevel + "^7    " + where
+			+ (info.bWounded ? "    ^1Wounded^7" : "") + (!e.BirdHasEverHatched ? "    Unhatched" : ""), x + 212, y + 38, Palette.TextDim);
+		if (placed != null && placed.maxHealth > 0)
 		{
-			Ui.Chip(cx, cy, "Unhatched", Palette.TextMuted);
+			Ui.GameBar(BarStyle.Health, new Rectangle(area.Right - 200, y + 4, 200, 26), placed.health / (float)placed.maxHealth, placed.health + "/" + placed.maxHealth);
 		}
 
-		int bx = x + 92, by = y + 74, bh = 28;
+		int bx = x + 212, by = y + 72;
 		bool inBag = PoultryCore.InBag(e);
-		bx = Act("store", bx, by, bh, inBag ? "Store" : "Take", () => Do(() => inBag ? PoultryCore.Store(e) : PoultryCore.Take(e)), AtAcademy,
+		bx = Act("store", bx, by, inBag ? "Store" : "Take", () => Do(() => inBag ? PoultryCore.Store(e) : PoultryCore.Take(e)), AtAcademy,
 			inBag ? "Leave it at the Academy" : "Put it in your bags");
-		bx = Act("equip", bx, by, bh, "Equip", () => Do(() => PoultryCore.Equip(e)), !PoultryCore.IsEquipped(e) && (AtAcademy || inBag), "Put it in your egg pocket");
-		bx = Act("fav", bx, by, bh, fav ? "Unfavorite" : "Favorite", () =>
+		bx = Act("equip", bx, by, "Equip", () => Do(() => PoultryCore.Equip(e)), !PoultryCore.IsEquipped(e) && (AtAcademy || inBag), "Put it in your egg pocket");
+		bx = Act("fav", bx, by, fav ? "Unfavorite" : "Favorite", () =>
 		{
 			PoultryCore.FavoriteName = fav ? "" : e.BirdName;
 			Say(fav ? "No favorite bird." : e.BirdName + " is your favorite.");
 		}, true, "Prepare hero equips your favorite bird");
-		bx = Act("heal", bx, by, bh, "Heal all", () => Do(PoultryCore.HealAll), AtAcademy, "Heal every wounded bird");
+		bx = Act("heal", bx, by, "Heal all", () => Do(PoultryCore.HealAll), AtAcademy, "Heal every wounded bird");
 		if (releaseConfirm == e)
 		{
-			Ui.BoxButton("qol_coop_free", new Rectangle(bx, by, 190, bh), "Confirm: +" + PoultryCore.ReleaseFeathers(e) + " Feathers", () =>
+			Act("free", bx, by, "Confirm +" + PoultryCore.ReleaseFeathers(e) + " Feathers", () =>
 			{
 				releaseConfirm = null;
 				Do(() => PoultryCore.Release(e));
-			}, accent: Palette.Bad);
+			}, true, "Click again to set it free for good", Palette.Bad);
 		}
 		else
 		{
-			Act("free", bx, by, bh, "Set free", () => releaseConfirm = e, AtAcademy && !e.InventoryLocked && !fav,
+			Act("free", bx, by, "Set free", () => releaseConfirm = e, AtAcademy && !e.InventoryLocked && !fav,
 				fav ? "Unfavorite it first" : e.InventoryLocked ? "It's locked" : "Gone for good: +" + PoultryCore.ReleaseFeathers(e) + " Feathers (asks again)", Palette.Bad);
 		}
-		if (placed != null && placed.maxHealth > 0)
-		{
-			float frac = placed.health / (float)placed.maxHealth;
-			Ui.Bar(new Rectangle(head.Right - 200, y + 12, 188, 22), frac, Palette.Health(frac), "HP " + placed.health + " / " + placed.maxHealth);
-		}
-		y = head.Bottom + 8;
+		y += 128;
 
-		// Stats: map + bars + combat numbers.
+		// Stats.
 		int t = info.birdStats[0], m = info.birdStats[1];
-		var stats = new Rectangle(x, y, 430, 204);
-		Section(stats, "Stats");
+		Rectangle stats = Section(new Rectangle(x, y, 416, 224), "Stats");
 		(int, int)? ghost = previewFoodLast != null ? (Math.Clamp(t + previewFoodLast.Tvs, -5, 5), Math.Clamp(m + previewFoodLast.Mvr, -5, 5)) : null;
-		StatMapWithLabels("qol_coop_map", new Rectangle(stats.X + 58, stats.Y + 46, 132, 132), new[] { (t, m, Palette.Accent) }, ghost);
-		int rx = stats.X + 240, rw = stats.Right - 10 - rx;
-		StatRows(rx, stats.Y + 34, rw, t, m, e.GetChampionPoints(), e.GetGeneration(), "qol_coop_sr");
+		StatMapWithLabels("qol_coop_map", new Rectangle(stats.X + 56, stats.Y + 58, 132, 132), new[] { (t, m, Color.White) }, ghost);
+		int rx = stats.X + 252;
 		int hpPct = (t < 0 ? -10 * t : -4 * t) + e.GetChampionPoints();
-		int iy = stats.Y + 98;
-		IconLine("ui_attack_block", rx, iy, "Block " + Math.Max(0, -8 * t), "From Tough (8 per point)");
-		IconLine("ui_attack_parry", rx + 96, iy, "Parry " + Math.Max(0, 6 * t), "From Swift (6 per point)");
-		IconLine("condition_regen", rx, iy + 28, "HP " + (hpPct >= 0 ? "+" : "") + hpPct + "%", "Tough +10%/pt, Swift -4%/pt, Pluck +1%/pt");
-		IconLine("ui_attack_counter", rx + 96, iy + 28, m < 0 ? "Range " + (2 - m) : "Melee", m < 0 ? "Ranged attacks from " + (2 - m) + " tiles" : "Fights up close");
-		IconLine("condition_atk_up", rx, iy + 56, "Damage +" + 20 * (e.GetGeneration() - 1) + "%", "+20% per generation after the first");
+		int ly = stats.Y + 46;
+		Fact(rx, ly, t < 0 ? "Tough" : t > 0 ? "Swift" : "Tough/Swift", Math.Abs(t).ToString(), PoultryHud.ToughSwiftHelp(t, e.GetChampionPoints()), t < 0 ? PoultryHud.Tough : PoultryHud.Swift);
+		Fact(rx, ly + 24, m < 0 ? "Ranged" : m > 0 ? "Melee" : "Rng/Melee", Math.Abs(m).ToString(), PoultryHud.RangedMeleeHelp(m, e.GetGeneration()), m < 0 ? PoultryHud.Ranged : PoultryHud.Melee);
+		Fact(rx, ly + 56, "Max HP", (hpPct >= 0 ? "+" : "") + hpPct + "%", "Tough +10%/pt, Swift -4%/pt, Pluck +1%/pt");
+		Fact(rx, ly + 80, t <= 0 ? "Block" : "Parry", (t <= 0 ? -8 * t : 6 * t).ToString(), "Block 8 per Tough point, Parry 6 per Swift point");
+		Fact(rx, ly + 104, "Attack", m < 0 ? (2 - m) + " tiles" : "melee", m < 0 ? "Ranged birds shoot from 2 + Ranged tiles" : "Melee birds fight up close");
+		Fact(rx, ly + 128, "Damage", "+" + 20 * (e.GetGeneration() - 1) + "%", "+20% per generation after the first");
 
 		// Powers & genes.
-		var pw = new Rectangle(stats.Right + 8, y, area.Right - stats.Right - 8, 204);
-		Section(pw, "Powers " + info.powersUnlockedArchetypes.Count + "/4");
-		int py = pw.Y + 30;
+		Rectangle pw = Section(new Rectangle(x + 416, y, 352, 224), "Powers  " + info.powersUnlockedArchetypes.Count + "/4");
+		int py = pw.Y + 38;
 		foreach (string p in info.powersUnlockedArchetypes.ToList())
 		{
 			info.powerGenesCollected.TryGetValue(p, out int g);
-			PowerTile(p, pw.X + 10, py, pw.Width - 20, g + " genes", () => Do(() => PoultryCore.Prune(e, p)));
-			py += 30;
+			PowerLine(p, pw.X + 14, py, pw.Width - 28, g + (g == 1 ? " gene" : " genes"), () => Do(() => PoultryCore.Prune(e, p)));
+			py += 34;
 		}
 		foreach (string p in info.powersViaStatsArchetypes)
 		{
-			PowerTile(p, pw.X + 10, py, pw.Width - 20, "from stats", null);
-			py += 30;
+			PowerLine(p, pw.X + 14, py, pw.Width - 28, "from stats", null);
+			py += 26;
 		}
 		if (info.powersUnlockedArchetypes.Count + info.powersViaStatsArchetypes.Count == 0)
 		{
-			Ui.Text("None yet: feed steaks with a power gene.", pw.X + 10, py + 2, Palette.TextMuted);
+			Ui.Text("None yet: feed steaks with a power gene.", pw.X + 14, py, Palette.TextMuted);
 			py += 26;
 		}
 		var genes = info.powerGenesCollected.Where(kv => kv.Key != "none" && !info.powersUnlockedArchetypes.Contains(kv.Key) && !info.sealedPowers.Contains(kv.Key))
 			.OrderByDescending(kv => kv.Value).ToList();
-		if (genes.Count > 0 && py < pw.Bottom - 30)
+		if (genes.Count > 0 && py < pw.Bottom - 24)
 		{
-			Ui.Text("Genes", pw.X + 10, py + 2, Palette.TextDim);
-			int gx = pw.X + 62;
-			foreach (var kv in genes)
+			string list = string.Join(", ", genes.Select(kv => PoultryCore.PowerName(kv.Key) + " " + kv.Value));
+			ui_mouseFrame gf = Ui.Area("qol_coop_genes", new Rectangle(pw.X + 14, py, pw.Width - 28, 20), null, Ui.WindowLevel + 1);
+			Ui.Text(Ui.Fit("Genes: " + list, pw.Width - 28), pw.X + 14, py, Palette.TextDim);
+			if (Ui.Hovered(gf))
 			{
-				string label = PoultryCore.PowerName(kv.Key) + " " + kv.Value;
-				int gw = (int)Ui.Measure(label).X + 12;
-				if (gx + gw > pw.Right - 8)
-				{
-					break;
-				}
-				ui_mouseFrame f = Ui.Area("qol_coop_gene_" + kv.Key, new Rectangle(gx, py, gw, 22), null, Ui.WindowLevel + 1);
-				gx = Ui.Chip(gx, py, label, Palette.TextDim);
-				if (Ui.Hovered(f))
-				{
-					Ui.Tooltip("^3" + PoultryCore.PowerName(kv.Key) + "^7: " + kv.Value + " genes, not learned yet."
-						+ "\nNext steak with this gene: " + PoultryCore.LearnChance(info, kv.Key) + "% to learn it.");
-				}
+				Ui.Tooltip("Genes collected but not learned yet:\n" + string.Join("\n", genes.Select(kv => PoultryCore.PowerName(kv.Key) + ": " + kv.Value
+					+ " (next steak " + PoultryCore.LearnChance(info, kv.Key) + "%)")));
 			}
 		}
 		if (info.sealedPowers.Count > 0)
 		{
-			Ui.Text("Forgotten: " + string.Join(", ", info.sealedPowers.Select(PoultryCore.PowerName)), pw.X + 10, pw.Bottom - 24, Palette.TextMuted);
+			Ui.Text(Ui.Fit("Forgotten: " + string.Join(", ", info.sealedPowers.Select(PoultryCore.PowerName)), pw.Width - 28), pw.X + 14, pw.Bottom - 28, Palette.TextMuted);
 		}
-		y = stats.Bottom + 8;
+		y += 232;
 
 		DrawFeedList(e, new Rectangle(x, y, area.Width, area.Bottom - y));
 	}
 
-	private static int Act(string id, int x, int y, int h, string label, Action onClick, bool enabled, string tip, Color? accent = null)
+	private static int Act(string id, int x, int y, string label, Action onClick, bool enabled, string tip, Color? accent = null)
 	{
-		int w = Ui.ButtonWidth(label) + 8;
-		Ui.BoxButton("qol_coop_act_" + id, new Rectangle(x, y, w, h), label, onClick, enabled, tooltipText: tip, accent: accent);
+		int w = Ui.ButtonWidth(label);
+		Ui.BoxButton("qol_coop_act_" + id, new Rectangle(x, y, w, 32), label, onClick, enabled, tooltipText: tip, accent: accent);
 		return x + w + 6;
 	}
 
-	private static void IconLine(string icon, int x, int y, string text, string tip)
+	private static void Fact(int x, int y, string label, string value, string tip, Color? labelColor = null)
 	{
-		int w = 24 + (int)Ui.Measure(text).X;
-		ui_mouseFrame f = Ui.Area("qol_coop_il_" + icon, new Rectangle(x, y, w, 22), null, Ui.WindowLevel + 1);
-		Ui.Icon(icon, new Rectangle(x, y + 1, 20, 20));
-		Ui.Text(text, x + 24, y + 1, Palette.Text);
+		ui_mouseFrame f = Ui.Area("qol_coop_fact_" + label, new Rectangle(x, y, 150, 20), null, Ui.WindowLevel + 1);
+		Ui.Text(label, x, y, labelColor ?? Palette.TextDim);
+		Ui.Text("^3" + value, x + 84, y, Palette.Text);
 		if (Ui.Hovered(f))
 		{
 			Ui.Tooltip(tip);
 		}
 	}
 
-	private static void PowerTile(string power, int x, int y, int w, string note, Action forget)
+	private static void PowerLine(string power, int x, int y, int w, string note, Action forget)
 	{
-		var icon = new Rectangle(x, y, 26, 26);
-		if (!Ui.PowerIcon(power, icon))
-		{
-			Ui.Panel(icon);
-		}
-		Ui.Text(PoultryCore.PowerName(power), x + 34, y + 3, Palette.Text);
-		Ui.TextRight(note, x + w - (forget != null ? 80 : 0), y + 3, Palette.TextDim);
-		ui_mouseFrame f = Ui.Area("qol_coop_pt_" + power, new Rectangle(x, y, w - 80, 26), null, Ui.WindowLevel + 1);
+		ui_mouseFrame f = Ui.Area("qol_coop_pt_" + power, new Rectangle(x, y, w - 74, 28), null, Ui.WindowLevel + 1);
+		Ui.Text(PoultryCore.PowerName(power), x, y + 4, forget != null ? Palette.Text : Palette.Info);
+		Ui.TextRight(note, x + w - (forget != null ? 76 : 0), y + 4, Palette.TextDim);
 		if (Ui.Hovered(f))
 		{
 			dmSpecialPower sp = Ui.Power(power);
-			Ui.Tooltip("^3" + PoultryCore.PowerName(power) + "^7" + (sp != null && !string.IsNullOrEmpty(PowerText(sp)) ? "\n" + Wrap(Ui.StripCodes(PowerText(sp)), 60) : ""));
+			string text = sp != null ? PowerText(sp) : null;
+			Ui.Tooltip("^3" + PoultryCore.PowerName(power) + "^7" + (!string.IsNullOrEmpty(text) ? "\n" + Wrap(Ui.StripCodes(text), 60) : ""));
 		}
 		if (forget != null)
 		{
 			bool can = PoultryCore.Count(PoultryCore.Pruning) > 0;
-			Ui.BoxButton("qol_coop_forget_" + power, new Rectangle(x + w - 72, y, 72, 26), "Forget", forget, can,
+			Ui.BoxButton("qol_coop_forget_" + power, new Rectangle(x + w - 64, y, 64, 32), "Forget", forget, can,
 				tooltipText: can ? "Costs 1 Pruning Poultice" : "Needs a Pruning Poultice", accent: Palette.Warn);
 		}
 	}
@@ -635,7 +598,7 @@ internal static class CoopPanel
 		return string.Join("\n", lines.Take(6));
 	}
 
-	private static void DrawFeedList(dmBirdEgg e, Rectangle r)
+	private static void DrawFeedList(dmBirdEgg e, Rectangle area)
 	{
 		BirdStatInfo info = e.GetStatInfo();
 		List<PoultryCore.Food> all = PoultryCore.BagFoods()
@@ -645,54 +608,58 @@ internal static class CoopPanel
 		List<PoultryCore.Food> foods = (feedAll ? all : all.Where(f => f.Useful))
 			.OrderByDescending(f => f.IsPlumage).ThenByDescending(f => f.Tier).ThenBy(f => f.Name).ToList();
 		int hidden = all.Count(f => !f.Useful);
-		Section(r, "Feed");
-		Ui.BoxButton("qol_coop_feedfilter", new Rectangle(r.X + 64, r.Y + 3, 150, 22), feedAll ? "Showing: all" : "Showing: rare only",
-			() => feedAll = !feedAll, tooltipText: feedAll ? "Only foods that raise Pluck or teach a power" : "Also show " + hidden + " plain steak type(s): they only shift stats");
-		Ui.TextRight(foods.Sum(f => f.Count) + " shown" + (AtAcademy ? " (bags + Pantry)" : " (bags)"), r.Right - 12, r.Y + 5, Palette.TextDim);
+		Rectangle r = Section(new Rectangle(area.X, area.Y, area.Width, area.Height / 32 * 32), "Feed");
+		Ui.BoxButton("qol_coop_feedfilter", new Rectangle(r.X + 80, r.Y + 2, 160, 32), feedAll ? "All foods" : "Rare only",
+			() => feedAll = !feedAll, tooltipText: feedAll ? "Show only foods that raise Pluck or teach a power" : "Also show " + hidden + " plain steak type(s): they only shift stats");
+		Ui.TextRight(foods.Sum(f => f.Count) + " shown" + (AtAcademy ? " (bags + Pantry)" : " (bags)"), r.Right - 14, r.Y + 8, Palette.TextDim);
 
-		feedRect = new Rectangle(r.X, r.Y + 30, r.Width, r.Height - 30);
-		const int rowH = 30;
-		int rows = Math.Max(1, (feedRect.Height - 4) / rowH);
+		feedRect = new Rectangle(r.X, r.Y + 38, r.Width, r.Height - 42);
+		const int rowH = 32;
+		int rows = Math.Max(1, feedRect.Height / rowH);
 		feedScroll = Math.Max(0, Math.Min(Math.Max(0, foods.Count - rows), feedScroll));
 		for (int vi = 0; vi < rows && feedScroll + vi < foods.Count; vi++)
 		{
 			PoultryCore.Food f = foods[feedScroll + vi];
-			var row = new Rectangle(r.X + 8, feedRect.Y + vi * rowH, r.Width - 26, rowH - 4);
+			var row = new Rectangle(r.X + 10, feedRect.Y + vi * rowH, r.Width - 20, rowH);
 			ui_mouseFrame hf = Ui.Area("qol_coop_feedrow" + vi, row, null, Ui.WindowLevel + 1);
 			if (Ui.Hovered(hf))
 			{
-				Ui.Fill(row, Palette.PanelHover);
+				Ui.Fill(row, new Color(255, 230, 170, 30));
 				previewFood = f;
 			}
-			Ui.BoxButton("qol_coop_feed" + vi, new Rectangle(row.X + 2, row.Y + 1, 56, row.Height - 2), "Feed", () => Do(() => PoultryCore.Feed(e, f)),
+			Ui.BoxButton("qol_coop_feed" + vi, new Rectangle(row.X, row.Y, 64, 32), "Feed", () => Do(() => PoultryCore.Feed(e, f)),
 				e.BirdHasEverHatched, tooltipText: e.BirdHasEverHatched ? null : "Hatch it first", stackLevel: Ui.WindowLevel + 2);
-			Ui.Text(Ui.Fit(f.Name, 250), row.X + 68, row.Y + 3, f.IsPlumage ? Palette.Info : f.Tier > 0 ? Palette.Accent : Palette.Text);
-			int cx = row.X + 330;
-			cx = Ui.Chip(cx, row.Y + 1, "x" + f.Count + (f.BagItem == null ? " Pantry" : ""), Palette.TextDim);
+			Ui.Sprite(FoodSprite(f), new Rectangle(row.X + 72, row.Y + 2, 28, 28));
+			Ui.Text(Ui.Fit(f.Name, 250), row.X + 106, row.Y + 6, f.IsPlumage ? Palette.Info : f.Tier > 0 ? Palette.Accent : Palette.Text);
+			var parts = new List<string> { "x" + f.Count + (f.BagItem == null ? " (Pantry)" : "") };
 			if (f.Tier > 0)
 			{
-				cx = Ui.Chip(cx, row.Y + 1, "Pluck +" + f.Tier, Palette.Accent);
+				parts.Add("^3Pluck +" + f.Tier + "^7");
 			}
 			if (f.Tvs != 0)
 			{
-				cx = Ui.Chip(cx, row.Y + 1, f.Tvs < 0 ? "Tough +" + -f.Tvs : "Swift +" + f.Tvs, f.Tvs < 0 ? PoultryHud.Tough : PoultryHud.Swift);
+				parts.Add(f.Tvs < 0 ? "Tough +" + -f.Tvs : "Swift +" + f.Tvs);
 			}
 			if (f.Mvr != 0)
 			{
-				cx = Ui.Chip(cx, row.Y + 1, f.Mvr < 0 ? "Ranged +" + -f.Mvr : "Melee +" + f.Mvr, f.Mvr < 0 ? PoultryHud.Ranged : PoultryHud.Melee);
+				parts.Add(f.Mvr < 0 ? "Ranged +" + -f.Mvr : "Melee +" + f.Mvr);
 			}
 			if (f.Gene != null && f.Gene != "none")
 			{
 				bool known = info.powersUnlockedArchetypes.Contains(f.Gene);
 				int chance = f.IsPlumage ? 100 : PoultryCore.LearnChance(info, f.Gene);
-				Ui.Chip(cx, row.Y + 1, PoultryCore.PowerName(f.Gene) + (known ? " (known)" : " " + chance + "%"), known ? Palette.TextMuted : Palette.Good);
+				parts.Add(known ? PoultryCore.PowerName(f.Gene) + " (known)" : "^2" + PoultryCore.PowerName(f.Gene) + " " + chance + "%^7");
 			}
+			Ui.Text(string.Join("    ", parts), row.X + 370, row.Y + 6, Palette.TextDim);
 		}
 		if (foods.Count == 0)
 		{
-			Ui.TextCentered(feedAll || hidden == 0 ? "No steaks or Plumage." : "No rare steaks or Plumage (" + hidden + " plain type(s) hidden).", feedRect, Palette.TextMuted);
+			Ui.TextCentered(feedAll || hidden == 0 ? "No steaks or Plumage." : "No rare steaks or Plumage   (" + hidden + " plain type(s): 'Rare only' to show)", feedRect, Palette.TextMuted);
 		}
-		Scrollbar(new Rectangle(r.Right - 12, feedRect.Y, 5, rows * rowH - 4), feedScroll, rows, foods.Count);
+		else if (foods.Count > rows)
+		{
+			Ui.TextRight((feedScroll + 1) + "-" + Math.Min(foods.Count, feedScroll + rows) + " of " + foods.Count, r.Right - 14, r.Bottom - 22, Palette.TextMuted);
+		}
 	}
 
 	// ---------- Breed tab ----------
@@ -701,93 +668,80 @@ internal static class CoopPanel
 	{
 		int x = area.X, y = area.Y;
 		bool fix = Config.On(Config.BreedingFix);
-		Ui.Text("Click two birds on the left. Both parents are kept.", x, y + 2, Palette.TextDim);
-		string fixText = fix ? "Gene bug fix: ON" : "Gene bug fix OFF: P1 loses its genes";
-		Ui.Chip(area.Right - (int)Ui.Measure(fixText).X - 14, y, fixText, fix ? Palette.Good : Palette.Bad);
-		y += 32;
+		Ui.Text("Click two birds on the left. Both parents are kept.", x, y + 6, Palette.TextDim);
+		Ui.TextRight(fix ? "^2Gene bug fix ON" : "^1Gene bug fix OFF: Parent 1 loses its genes", area.Right, y + 6, Palette.Text);
+		y += 40;
 
-		int cardW = (area.Width - 40) / 3;
-		ParentCard(new Rectangle(x, y, cardW, 150), parentA, "Parent 1");
-		Ui.TextCentered("+", new Rectangle(x + cardW, y, 20, 150), Palette.Accent, UiFont.Large);
-		ParentCard(new Rectangle(x + cardW + 20, y, cardW, 150), parentB, "Parent 2");
-		Ui.TextCentered("=", new Rectangle(x + 2 * cardW + 20, y, 20, 150), Palette.Accent, UiFont.Large);
-		var egg = new Rectangle(x + 2 * cardW + 40, y, cardW, 150);
+		ParentCard(new Rectangle(x, y, 224, 192), parentA, "Parent 1");
+		Ui.TextCentered("+", new Rectangle(x + 224, y, 48, 192), Palette.Accent, UiFont.Title);
+		ParentCard(new Rectangle(x + 272, y, 224, 192), parentB, "Parent 2");
+		Ui.TextCentered("=", new Rectangle(x + 496, y, 48, 192), Palette.Accent, UiFont.Title);
+		var egg = new Rectangle(x + 544, y, 224, 192);
 
 		if (parentA == null || parentB == null)
 		{
-			Ui.Panel(egg, Palette.Panel, Palette.Border);
-			Ui.TextCentered("Egg preview", egg, Palette.TextMuted, UiFont.Medium);
+			Ui.Box(egg);
+			Ui.TextCentered("The egg", egg, Palette.TextMuted, UiFont.Medium);
 			return;
 		}
 		if (!parentA.BirdHasEverHatched || !parentB.BirdHasEverHatched)
 		{
-			Ui.Panel(egg, Palette.Panel, Palette.Bad);
+			Ui.Box(egg);
 			Ui.TextCentered("Both must have hatched", egg, Palette.Bad);
 			return;
 		}
 		PoultryCore.BreedPreview p = PoultryCore.Preview(parentA, parentB);
-		Ui.Panel(egg, Palette.PanelSelected, Palette.BorderBright);
-		Ui.Text("The egg", egg.X + 10, egg.Y + 6, Palette.Accent, UiFont.Medium);
-		int ex = Ui.Chip(egg.X + 10, egg.Y + 38, "Generation " + p.Generation, Palette.Accent);
-		Ui.Chip(ex, egg.Y + 38, "Pluck " + p.Pluck, Palette.Text);
-		Ui.Text(parentA.GetGeneration() == parentB.GetGeneration() ? "Same generation: +1" : "Different generations: no +1", egg.X + 10, egg.Y + 66, Palette.TextDim);
-		StatRows(egg.X + 10, egg.Y + 94, egg.Width - 20, p.Tvs, p.Mvr, p.Pluck, p.Generation, "qol_coop_egg");
-		y += 160;
+		Ui.Box(egg, true);
+		Ui.Text("The egg", egg.X + 14, egg.Y + 8, Palette.Accent, UiFont.Medium);
+		Ui.Text("Gen ^3" + p.Generation + "^7   Pluck ^3" + p.Pluck, egg.X + 14, egg.Y + 40, Palette.Text, UiFont.Medium);
+		Ui.Text(parentA.GetGeneration() == parentB.GetGeneration() ? "Same generation: +1" : "Different generations: no +1", egg.X + 14, egg.Y + 70, Palette.TextDim);
+		StatRows(egg.X + 14, egg.Y + 98, egg.Width - 28, p.Tvs, p.Mvr, p.Pluck, p.Generation, "qol_coop_egg");
+		y += 200;
 
-		var map = new Rectangle(x, y, 300, area.Bottom - y - 44);
-		Section(map, "Stats");
+		int lowH = (area.Bottom - y - 48) / 32 * 32;
+		Rectangle map = Section(new Rectangle(x, y, 288, lowH), "Stats");
 		Point a = parentA.GetStatAxis(), b = parentB.GetStatAxis();
-		int ms = Math.Max(66, Math.Min(map.Height - 86, 154));
-		StatMapWithLabels("qol_coop_bmap", new Rectangle(map.X + (map.Width - ms) / 2, map.Y + 46, ms, ms),
-			new[] { (a.X, a.Y, PoultryHud.Swift), (b.X, b.Y, PoultryHud.Ranged), (p.Tvs, p.Mvr, Palette.Accent) });
-		int lx = Ui.Chip(map.X + 10, map.Bottom - 28, "P1", PoultryHud.Swift);
-		lx = Ui.Chip(lx, map.Bottom - 28, "P2", PoultryHud.Ranged);
-		Ui.Chip(lx, map.Bottom - 28, "Egg", Palette.Accent);
+		int ms = Math.Max(66, Math.Min(map.Height - 100, 132));
+		StatMapWithLabels("qol_coop_bmap", new Rectangle(map.X + (map.Width - ms) / 2, map.Y + 58, ms, ms),
+			new[] { (a.X, a.Y, PoultryHud.Swift), (b.X, b.Y, PoultryHud.Ranged), (p.Tvs, p.Mvr, Color.White) });
+		int lx = Ui.Chip(map.X + 14, map.Bottom - 26, "P1", PoultryHud.Swift);
+		lx = Ui.Chip(lx, map.Bottom - 26, "P2", PoultryHud.Ranged);
+		Ui.Chip(lx, map.Bottom - 26, "Egg (white)", Palette.Text);
 
-		var odds = new Rectangle(map.Right + 8, y, area.Right - map.Right - 8, area.Bottom - y - 44);
-		Section(odds, "Powers it can be born with (max 4)");
-		int oy = odds.Y + 32;
-		foreach (var (gene, count, chance) in p.Powers.Take(Math.Max(1, (odds.Height - 40) / 28)))
+		Rectangle odds = Section(new Rectangle(x + 288, y, 480, lowH), "Powers it can be born with (max 4)");
+		int oy = odds.Y + 40;
+		foreach (var (gene, count, chance) in p.Powers.Take(Math.Max(1, (odds.Height - 48) / 30)))
 		{
-			var icon = new Rectangle(odds.X + 10, oy, 24, 24);
-			if (!Ui.PowerIcon(gene, icon))
-			{
-				Ui.Panel(icon);
-			}
-			Ui.Text(Ui.Fit(PoultryCore.PowerName(gene), 180), odds.X + 42, oy + 2, Palette.Text);
-			Ui.Text(count + " genes", odds.X + 230, oy + 2, Palette.TextDim);
+			Ui.Text(Ui.Fit(PoultryCore.PowerName(gene), 170), odds.X + 14, oy + 4, Palette.Text);
+			Ui.Text(count + (count == 1 ? " gene" : " genes"), odds.X + 190, oy + 4, Palette.TextDim);
 			int pct = (int)Math.Round(chance * 100);
-			Ui.Bar(new Rectangle(odds.X + 310, oy + 3, odds.Width - 320, 18), (float)chance, chance >= 0.99 ? Palette.Good : chance >= 0.5 ? Palette.Accent : Palette.Warn, pct + "%");
-			oy += 28;
+			Ui.GameBar(chance >= 0.99 ? BarStyle.Xp : chance >= 0.5 ? BarStyle.Stamina : BarStyle.Ire, new Rectangle(odds.X + 270, oy, odds.Width - 284, 26), (float)chance, pct + "%");
+			oy += 30;
 		}
 		if (p.Powers.Count == 0)
 		{
-			Ui.Text("No power genes in either parent.", odds.X + 10, oy, Palette.TextMuted);
+			Ui.Text("No power genes in either parent.", odds.X + 14, oy, Palette.TextMuted);
 		}
 
 		int have = PoultryCore.Count(PoultryCore.Passionate);
-		Ui.BoxButton("qol_coop_breed", new Rectangle(area.Right - 380, area.Bottom - 36, 380, 34), "Breed  (1 Passionate Poultice, have " + have + ")",
+		Ui.BoxButton("qol_coop_breed", new Rectangle(area.Right - 384, area.Bottom - 40, 384, 32), "Breed  (1 Passionate Poultice, have " + have + ")",
 			() => Do(() => PoultryCore.Breed(parentA, parentB)), have > 0, font: UiFont.Medium, tooltipText: have > 0 ? null : "Needs a Passionate Poultry Poultice");
 	}
 
 	private static void ParentCard(Rectangle r, dmBirdEgg e, string label)
 	{
+		Rectangle b = Ui.Box(r);
 		if (e == null)
 		{
-			Ui.Panel(r, Palette.Panel, Palette.Border);
-			Ui.TextCentered(label + ": pick a bird", r, Palette.TextMuted);
+			Ui.TextCentered(label + ": pick a bird", b, Palette.TextMuted);
 			return;
 		}
-		Ui.Panel(r, Palette.PanelRaised, Palette.Border);
-		var portrait = new Rectangle(r.X + 8, r.Y + 8, 44, 60);
-		Ui.Fill(portrait, Palette.BarBack);
-		Ui.Sprite(e.GetBirdSprite(), portrait);
-		Ui.Text(label, r.X + 60, r.Y + 6, Palette.TextDim);
-		Ui.Text(Ui.Fit(e.BirdName, r.Width - 70, UiFont.Medium), r.X + 60, r.Y + 24, Palette.Text, UiFont.Medium);
-		int cx = Ui.Chip(r.X + 60, r.Y + 54, "G" + e.GetGeneration(), Palette.Accent);
-		Ui.Chip(cx, r.Y + 54, "P" + e.GetChampionPoints(), Palette.Text);
+		Ui.Sprite(e.GetBirdSprite(), new Rectangle(b.X + 10, b.Y + 10, 44, 60));
+		Ui.Text(label, b.X + 62, b.Y + 8, Palette.TextDim);
+		Ui.Text(Ui.Fit(e.BirdName, b.Width - 72, UiFont.Medium), b.X + 62, b.Y + 28, Palette.Text, UiFont.Medium);
+		Ui.Text("Gen ^3" + e.GetGeneration() + "^7   Pluck ^3" + e.GetChampionPoints(), b.X + 62, b.Y + 56, Palette.TextDim);
 		Point s = e.GetStatAxis();
-		StatRows(r.X + 10, r.Y + 94, r.Width - 20, s.X, s.Y, e.GetChampionPoints(), e.GetGeneration(), "qol_coop_par_" + label.Replace(" ", ""));
+		StatRows(b.X + 14, b.Y + 98, b.Width - 28, s.X, s.Y, e.GetChampionPoints(), e.GetGeneration(), "qol_coop_par_" + label.Replace(" ", ""));
 	}
 
 	// ---------- Ascend tab ----------
@@ -806,40 +760,35 @@ internal static class CoopPanel
 		int pluck = e.GetChampionPoints();
 		int after = PoultryCore.PluckAfterAscend(pluck, ascendN);
 
-		var head = new Rectangle(x, y, area.Width, 120);
-		Ui.Panel(head, Palette.PanelRaised, Palette.Border);
-		var portrait = new Rectangle(x + 8, y + 8, 76, 104);
-		Ui.Fill(portrait, Palette.BarBack);
-		Ui.Sprite(e.GetBirdSprite(), portrait);
-		Ui.Text(e.BirdName, x + 96, y + 6, Palette.Text, UiFont.Large);
-		Ui.Text("Generation", x + 96, y + 52, Palette.TextDim, UiFont.Medium);
-		Ui.Text(e.GetGeneration().ToString(), x + 230, y + 46, Palette.Text, UiFont.Large);
-		Ui.Text("->", x + 290, y + 50, Palette.TextDim, UiFont.Medium);
-		Ui.Text((e.GetGeneration() + 1).ToString(), x + 330, y + 46, Palette.Good, UiFont.Large);
-		Ui.Text("+20% damage. Keeps stats, powers and genes; only Pluck drops.", x + 96, y + 88, Palette.TextDim);
-		y = head.Bottom + 12;
+		Portrait(e, new Rectangle(x, y, 198, 120));
+		Ui.Text(e.BirdName, x + 212, y, Palette.Text, UiFont.Large);
+		Ui.Text("Generation", x + 212, y + 48, Palette.TextDim, UiFont.Medium);
+		Ui.Text(e.GetGeneration().ToString(), x + 340, y + 42, Palette.Text, UiFont.Title);
+		Ui.Icon("ui_yellow_red_arrow", new Rectangle(x + 392, y + 44, 40, 34));
+		Ui.Text((e.GetGeneration() + 1).ToString(), x + 444, y + 42, Palette.Good, UiFont.Title);
+		Ui.Text("+20% damage. Keeps stats, powers and genes; only Pluck drops.", x + 212, y + 88, Palette.TextDim);
+		y += 136;
 
-		var sec = new Rectangle(x, y, area.Width, 230);
-		Section(sec, "Passionate Poultices to spend");
-		int bx = sec.X + 10, by = sec.Y + 34;
+		Rectangle sec = Section(new Rectangle(x, y, area.Width, 256), "Passionate Poultices to spend");
+		int bx = sec.X + 14, by = sec.Y + 40;
 		for (int n = 1; n <= 8; n++)
 		{
 			int nn = n;
-			Ui.BoxButton("qol_coop_asc" + n, new Rectangle(bx, by, 56, 36), n.ToString(), () => ascendN = nn, n <= have, n == ascendN, UiFont.Medium,
+			Ui.BoxButton("qol_coop_asc" + n, new Rectangle(bx, by, 64, 32), n.ToString(), () => ascendN = nn, n <= have, n == ascendN, UiFont.Medium,
 				n <= have ? "Keeps " + (100 - 100.0 * Math.Pow(0.5, n)).ToString("0.#") + "% of Pluck" : "You have " + have);
-			bx += 62;
+			bx += 72;
 		}
-		Ui.Text("You have ^3" + have + "^7", bx + 12, by + 8, Palette.TextDim);
+		Ui.Text("You have ^3" + have + "^7", bx + 8, by + 6, Palette.TextDim, UiFont.Medium);
 
-		int barW = sec.Width - 140;
+		int barX = sec.X + 140, barW = sec.Width - 160;
 		int max = Math.Max(1, pluck);
-		Ui.Text("Pluck now", sec.X + 10, by + 56, Palette.TextDim);
-		Ui.Bar(new Rectangle(sec.X + 120, by + 54, barW, 24), 1f, Palette.Accent, pluck.ToString());
-		Ui.Text("Pluck after", sec.X + 10, by + 88, Palette.TextDim);
-		Ui.Bar(new Rectangle(sec.X + 120, by + 86, barW, 24), after / (float)max, Palette.Good, after + "  (-" + (pluck - after) + ")");
-		Ui.Text("Each extra poultice halves the loss. Rare steaks (Pluck +1/+2/+3) refill it.", sec.X + 10, by + 124, Palette.TextMuted);
+		Ui.Text("Pluck now", sec.X + 14, by + 58, Palette.TextDim, UiFont.Medium);
+		Ui.GameBar(BarStyle.Stamina, new Rectangle(barX, by + 54, barW, 30), 1f, pluck.ToString());
+		Ui.Text("Pluck after", sec.X + 14, by + 98, Palette.TextDim, UiFont.Medium);
+		Ui.GameBar(BarStyle.Stamina, new Rectangle(barX, by + 94, barW, 30), after / (float)max, after + "   (-" + (pluck - after) + ")");
+		Ui.Text("Each extra poultice halves the loss. Rare steaks (Pluck +1 / +2 / +3) refill it.", sec.X + 14, by + 144, Palette.TextMuted);
 
-		Ui.BoxButton("qol_coop_ascend", new Rectangle(area.Right - 380, area.Bottom - 36, 380, 34),
+		Ui.BoxButton("qol_coop_ascend", new Rectangle(area.Right - 384, area.Bottom - 40, 384, 32),
 			"Ascend to generation " + (e.GetGeneration() + 1) + "  (" + ascendN + " poultices)", () => Do(() => PoultryCore.Ascend(e, ascendN)),
 			have >= ascendN && e.BirdHasEverHatched, font: UiFont.Medium);
 	}
@@ -848,84 +797,84 @@ internal static class CoopPanel
 
 	private static void DrawPantry(Rectangle body)
 	{
-		int colW = (body.Width - 12) / 2;
+		const int colW = 576, rowH = 32;
 		var bag = PoultryCore.BagFoods().GroupBy(f => f.Key).Select(gr => (name: gr.First().Name, item: (dmItem)gr.First().BagItem, n: gr.Count()))
 			.Concat(Game.dungeonMans.GetInventoryList().Where(i => PoultryCore.IsPantryItem(i) && !(i is dmEnemyBirdSteak)).GroupBy(i => i.ArchetypeName)
 				.Select(gr => (name: gr.First().GetName(), item: gr.First(), n: gr.Count())))
 			.ToList();
-		const int rowH = 30;
 
-		var left = new Rectangle(body.X, body.Y, colW, body.Height);
-		Section(left, "In your bags (" + bag.Sum(b => b.n) + ")");
-		Ui.BoxButton("qol_coop_storeall", new Rectangle(left.Right - 110, left.Y + 3, 100, 22), "Store all", () => Do(PoultryCore.DepositAll), bag.Count > 0,
+		Rectangle left = Section(new Rectangle(body.X, body.Y, colW, body.Height / 32 * 32), "In your bags  (" + bag.Sum(b => b.n) + ")");
+		Ui.BoxButton("qol_coop_storeall", new Rectangle(left.Right - 138, left.Y + 2, 128, 32), "Store all", () => Do(PoultryCore.DepositAll), bag.Count > 0,
 			tooltipText: "Move every steak, Plumage and poultice to the Pantry (locked items stay)");
-		bagRect = new Rectangle(left.X, left.Y + 32, left.Width, left.Height - 32);
-		int rows = (bagRect.Height - 4) / rowH;
+		bagRect = new Rectangle(left.X, left.Y + 40, left.Width, left.Height - 44);
+		int rows = bagRect.Height / rowH;
 		bagScroll = Math.Max(0, Math.Min(Math.Max(0, bag.Count - rows), bagScroll));
 		for (int vi = 0; vi < rows && bagScroll + vi < bag.Count; vi++)
 		{
 			var b = bag[bagScroll + vi];
 			int ry = bagRect.Y + vi * rowH;
-			Ui.BoxButton("qol_coop_store" + vi, new Rectangle(left.X + 10, ry, 64, rowH - 4), "Store", () => Do(() => PoultryCore.Deposit(b.item)), !b.item.InventoryLocked,
+			Ui.BoxButton("qol_coop_store" + vi, new Rectangle(left.X + 12, ry, 64, 32), "Store", () => Do(() => PoultryCore.Deposit(b.item)), !b.item.InventoryLocked,
 				tooltipText: b.item.InventoryLocked ? "Locked" : null);
-			Ui.Text(Ui.Fit(b.name, left.Width - 170), left.X + 84, ry + 3, Palette.Text);
-			if (b.n > 1)
-			{
-				Ui.TextRight("x" + b.n, left.Right - 18, ry + 3, Palette.TextDim);
-			}
+			Ui.Sprite(b.item.sprite, new Rectangle(left.X + 84, ry + 2, 28, 28));
+			Ui.Text(Ui.Fit(b.name, left.Width - 200), left.X + 120, ry + 6, Palette.Text);
 			if (b.item.InventoryLocked)
 			{
-				Ui.Icon("ui_lock", new Rectangle(left.Right - 66, ry + 2, 20, 20));
+				Ui.Icon("ui_lock", new Rectangle(left.Right - 70, ry + 6, 18, 18));
+			}
+			if (b.n > 1)
+			{
+				Ui.TextRight("x" + b.n, left.Right - 16, ry + 6, Palette.TextDim);
 			}
 		}
 		if (bag.Count == 0)
 		{
 			Ui.TextCentered("Nothing to store.", bagRect, Palette.TextMuted);
 		}
-		Scrollbar(new Rectangle(left.Right - 8, bagRect.Y, 5, rows * rowH - 4), bagScroll, rows, bag.Count);
+		else if (bag.Count > rows)
+		{
+			Ui.TextRight((bagScroll + 1) + "-" + Math.Min(bag.Count, bagScroll + rows) + " of " + bag.Count + " (wheel)", left.Right - 14, left.Bottom - 22, Palette.TextMuted);
+		}
 
-		var right = new Rectangle(left.Right + 12, body.Y, colW, body.Height - 118);
+		int px = body.X + colW + 16;
 		var pantry = PoultryCore.Pantry;
-		Section(right, "Pantry");
-		Ui.Bar(new Rectangle(right.X + 84, right.Y + 5, 170, 18), pantry.Count / (float)Math.Max(1, PoultryCore.PantrySlots),
-			pantry.Count >= PoultryCore.PantrySlots ? Palette.Bad : Palette.Info, pantry.Count + " / " + PoultryCore.PantrySlots + " stacks");
-		Ui.TextRight("Shift = whole stack", right.Right - 12, right.Y + 5, Palette.TextMuted);
-		pantryRect = new Rectangle(right.X, right.Y + 32, right.Width, right.Height - 32);
-		int prow = (pantryRect.Height - 4) / rowH;
+		Rectangle right = Section(new Rectangle(px, body.Y, colW, body.Height / 32 * 32 - 128), "Pantry");
+		Ui.GameBar(pantry.Count >= PoultryCore.PantrySlots ? BarStyle.Health : BarStyle.Mana, new Rectangle(right.X + 100, right.Y + 6, 200, 24),
+			pantry.Count / (float)Math.Max(1, PoultryCore.PantrySlots), pantry.Count + " / " + PoultryCore.PantrySlots + " stacks");
+		Ui.TextRight("Shift = whole stack", right.Right - 14, right.Y + 8, Palette.TextMuted);
+		pantryRect = new Rectangle(right.X, right.Y + 40, right.Width, right.Height - 44);
+		int prow = pantryRect.Height / rowH;
 		pantryScroll = Math.Max(0, Math.Min(Math.Max(0, pantry.Count - prow), pantryScroll));
 		for (int vi = 0; vi < prow && pantryScroll + vi < pantry.Count; vi++)
 		{
 			var kv = pantry[pantryScroll + vi];
 			int ry = pantryRect.Y + vi * rowH;
-			Ui.BoxButton("qol_coop_take" + vi, new Rectangle(right.X + 10, ry, 56, rowH - 4), "Take",
+			Ui.BoxButton("qol_coop_take" + vi, new Rectangle(right.X + 12, ry, 64, 32), "Take",
 				() => Do(() => PoultryCore.Withdraw(kv.Key, Game.theInput.bShiftIsDown ? kv.Value : 1)), tooltipText: "Shift-click: the whole stack");
-			int tx = right.X + 72;
+			int tx = right.X + 84;
 			if (!kv.Key.StartsWith("i|"))
 			{
 				PoultryCore.Food f = PoultryCore.FoodFromKey(kv.Key, 1);
 				int feathers = f != null ? PoultryCore.RenderFeathers(f) : 0;
-				Ui.BoxButton("qol_coop_render" + vi, new Rectangle(tx, ry, 88, rowH - 4), "Render +" + feathers, () => Do(() => PoultryCore.Render(kv.Key)), f != null,
+				Ui.BoxButton("qol_coop_render" + vi, new Rectangle(tx, ry, 96, 32), "Render +" + feathers, () => Do(() => PoultryCore.Render(kv.Key)), f != null,
 					tooltipText: "Turn one into " + feathers + " Feathers", accent: Palette.Warn);
-				tx += 94;
+				tx += 104;
 			}
-			Ui.Text(Ui.Fit(PoultryCore.ItemName(kv.Key), right.Right - 76 - tx), tx + 4, ry + 3, Palette.Text);
-			Ui.TextRight("x" + kv.Value, right.Right - 18, ry + 3, Palette.TextDim);
+			Ui.Sprite(KeySprite(kv.Key), new Rectangle(tx, ry + 2, 28, 28));
+			Ui.Text(Ui.Fit(PoultryCore.ItemName(kv.Key), right.Right - 70 - tx - 36), tx + 36, ry + 6, Palette.Text);
+			Ui.TextRight("x" + kv.Value, right.Right - 16, ry + 6, Palette.TextDim);
 		}
 		if (pantry.Count == 0)
 		{
 			Ui.TextCentered("Empty: store steaks and poultices from your bags.", pantryRect, Palette.TextMuted);
 		}
-		Scrollbar(new Rectangle(right.Right - 8, pantryRect.Y, 5, prow * rowH - 4), pantryScroll, prow, pantry.Count);
 
-		var shop = new Rectangle(right.X, right.Bottom + 8, colW, 110);
-		Section(shop, "Feathers shop");
-		Ui.TextRight("You have ^3" + PoultryCore.Feathers + "^7 Feathers", shop.Right - 12, shop.Y + 5, Palette.TextDim);
-		int sw = (shop.Width - 30) / 2;
-		Ui.BoxButton("qol_coop_buyslots", new Rectangle(shop.X + 10, shop.Y + 34, sw, 30), "+" + PoultryCore.SlotsPerPurchase + " stacks:  " + PoultryCore.SlotPrice,
+		Rectangle shop = Section(new Rectangle(px, right.Bottom + 0, colW, 128), "Feathers shop");
+		Ui.TextRight("You have ^3" + PoultryCore.Feathers + "^7 Feathers", shop.Right - 14, shop.Y + 8, Palette.TextDim);
+		Ui.BoxButton("qol_coop_buyslots", new Rectangle(shop.X + 14, shop.Y + 44, 256, 32), "+" + PoultryCore.SlotsPerPurchase + " stacks:  " + PoultryCore.SlotPrice + " Feathers",
 			() => Do(PoultryCore.BuySlots), PoultryCore.Feathers >= PoultryCore.SlotPrice, tooltipText: "Each upgrade costs 25 more");
-		Ui.BoxButton("qol_coop_buypoult", new Rectangle(shop.X + 20 + sw, shop.Y + 34, sw, 30), "Passionate Poultice:  " + PoultryCore.PoulticeFeatherPrice,
+		Ui.BoxButton("qol_coop_buypoult", new Rectangle(shop.X + 290, shop.Y + 44, 256, 32), "Passionate Poultice:  " + PoultryCore.PoulticeFeatherPrice,
 			() => Do(() => PoultryCore.BuyPoultice(PoultryCore.Passionate)), PoultryCore.Feathers >= PoultryCore.PoulticeFeatherPrice);
-		Ui.BoxButton("qol_coop_sellpoult", new Rectangle(shop.X + 10, shop.Y + 70, sw, 30), "Sell a Passionate:  +" + PoultryCore.PoulticeSellFeathers,
+		Ui.BoxButton("qol_coop_sellpoult", new Rectangle(shop.X + 14, shop.Y + 84, 256, 32), "Sell a Passionate:  +" + PoultryCore.PoulticeSellFeathers,
 			() => Do(PoultryCore.SellPoultice), PoultryCore.Count(PoultryCore.Passionate) > 0, accent: Palette.Warn);
 	}
 }

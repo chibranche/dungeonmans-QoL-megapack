@@ -104,12 +104,12 @@ internal static class GameSpeed
 			return;
 		}
 		g.theRenderer.BeginSpriteBatch();
-		var r = new Rectangle(8, 6, 92, 30);
+		var r = new Rectangle(Ui.ScreenSize.X - 112 - 256 - 8 - 64 - 8 - 96, 8, 96, 32);
 		bool fast = speed > 1;
 		bool hot = Ui.BoxButton("qol_speed", r, "", Cycle, accent: fast ? Palette.Info : (Color?)null, selected: fast,
 			tooltipText: "Game speed x" + speed + "\nClick or F11: x1 / x2 / x3\nAlso in the Options menu");
-		Ui.Icon("condition_speed_up", new Rectangle(r.X + 6, r.Y + 3, 24, 24), fast || hot ? (Color?)null : new Color(170, 160, 140));
-		Ui.Text("x" + speed, r.X + 38, r.Y + 2, fast ? Palette.Accent : Palette.Text, UiFont.Medium);
+		Ui.Icon("condition_speed_up", new Rectangle(r.X + 10, r.Y + 4, 24, 24));
+		Ui.Text("x" + speed, r.X + 44, r.Y + 3, fast ? Palette.Accent : Palette.Text, UiFont.Medium);
 		g.theRenderer.EndSpriteBatch();
 	}
 }
