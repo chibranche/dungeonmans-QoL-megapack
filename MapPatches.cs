@@ -122,7 +122,7 @@ internal static class MapPatches
 	private static bool HandleInputPrefix(dmOverworldMapDisplay __instance)
 	{
 		List<ActionButton> a = dmUtilities.theGame.theInput.ExecutedActions;
-		if (Config.On(Config.MapTravel) && a.Contains(ActionButton.Enter) || a.Contains(ActionButton.Select))
+		if (Config.On(Config.MapTravel) && (a.Contains(ActionButton.Enter) || a.Contains(ActionButton.Select)))
 		{
 			WalkTo(__instance, SelectedLocation(__instance));
 			return false;

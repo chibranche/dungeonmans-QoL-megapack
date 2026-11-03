@@ -25,43 +25,50 @@ public sealed class QoLMod : IMod
 		ctx.Patch("Proofs: bulk +/- on mouse click", ProofPatches.Register);
 		ctx.Patch("Proofs: bulk +/- on keyboard", ProofPatches.RegisterKeyboard);
 		ctx.Patch("Proofs: hint line", ProofPatches.RegisterHint);
-		ctx.Patch("Hatch: skip greeting", HatchPatches.RegisterSkipGreeting);
-		ctx.Patch("Hatch: FAQ in main menu", HatchPatches.RegisterFaqInMenu);
-		ctx.Patch("Hatch: deposit/withdraw all", HatchPatches.RegisterBulkTransfer);
 		ctx.Patch("Map: remembered filters", MapPatches.RegisterFilters);
 		ctx.Patch("Map: click to travel", MapPatches.RegisterTravel);
 		ctx.Patch("Options menu: save/quit moved to bottom", OptionsMenuPatch.Register);
-		ctx.Patch("Poultry: breeding bug fix", PoultryCore.Register);
 		ctx.Patch("Game speed", GameSpeed.Register);
 		ctx.Patch("Headmaster: hide full Library", HeadmasterPatches.Register);
+		ctx.Patch("Towns: pig farm in every world", PigFarm.Register);
 
 		// QoL windows count as open menus for every mod (and for each other).
 		Ui.AddModal(() => AcademyDirectory.IsOpen);
-		Ui.AddModal(() => CoopPanel.IsOpen);
 		Ui.AddModal(() => QoLHub.IsOpen);
+		Ui.AddModal(() => FallenHeroes.IsOpen);
 
-		DevCapture.Register(ctx, ctx.Harmony);
+		QoLCapture.Register();
+		ctx.Patch("Pool sense", PoolSense.Register);
+		ctx.Patch("Equip best armor: button under the bag", AutoEquip.Register);
+		ctx.Patch("Fullscreen alt-tab fix", FullscreenFix.Register);
+		ctx.Patch("Borderless fullscreen", BorderlessFullscreen.Register);
+		FavoriteBird.Register();
+		OverworldHud.Register();
 
+		Events.Input += FallenHeroes.HandleInput;
 		Events.Input += g => !AcademyDirectory.InputPrefix(g);
+		Events.Input += ClickTravel.HandleInput;
+		Events.Input += AutoEquip.HandleInput;
 		Events.DrawOverlay += DrawOverlay;
 	}
 
 	private static void DrawOverlay(dmGame g)
 	{
 		GameSpeed.SyncOption(g);
+		BorderlessFullscreen.SyncLabel(g);
 		AcademyDirectory.DrawOverlay(g);
 		if (g.dungeonMans != null && !g.bShowMainMenu)
 		{
 			FloorHighlight.Draw(g);
+			PoolSense.Draw(g);
+			FallenHeroes.Draw(g);
 			OverworldHud.Draw(g);
-			GameSpeed.Draw(g);
+			// Top bar buttons are added to ModKit's shared TopBar, which lays them out after every mod has drawn.
 			QoLHub.DrawButton(g);
+			GameSpeed.Draw(g);
+
 			QoLHub.Draw(g);
-			PoultryHud.Draw(g);
-			if (CoopPanel.IsOpen)
-			{
-				CoopPanel.Draw(g);
-			}
+			AutoEquip.DrawInventoryButton(g);
 		}
 	}
 }

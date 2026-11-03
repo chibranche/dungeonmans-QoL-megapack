@@ -24,7 +24,9 @@ Expand-Archive $ModKitZip $stage
 $qol = Join-Path $stage "Mods\QoL"
 New-Item -ItemType Directory -Force $qol | Out-Null
 $out = Join-Path $root "bin\Release\net8.0"
-Copy-Item (Join-Path $out "DungeonmansQoL.dll"), (Join-Path $out "mod.json"), (Join-Path $root "README.md") $qol
+Copy-Item (Join-Path $out "DungeonmansQoL.dll"), (Join-Path $out "mod.json"), (Join-Path $root "README.md"), (Join-Path $root "LICENSE") $qol
+
+if (Test-Path (Join-Path $root "docs")) { Copy-Item (Join-Path $root "docs") $qol -Recurse }
 
 $zip = Join-Path $dist "DungeonmansQoL-$version-with-ModKit.zip"
 if (Test-Path $zip) { Remove-Item $zip }

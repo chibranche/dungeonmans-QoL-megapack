@@ -20,7 +20,7 @@ internal static class FloorHighlight
 		var locked = new HashSet<(string, string)>(g.dungeonMans.GetInventoryList()
 			.Where(i => i.InventoryLocked).Select(i => (i.ArchetypeName, i.GetName())));
 		// Floor items are dmTreasure actors wrapping the dmItem.
-		List<dmTreasure> matches = g.allActors.OfType<dmTreasure>().Where(t =>
+		List<dmTreasure> matches = LevelActors.Of<dmTreasure>(g).Where(t =>
 		{
 			dmItem item = t.containedItem;
 			if (item == null || (!dmGazetteer.IsItemSetAsFavorite(item.ArchetypeName) && !locked.Contains((item.ArchetypeName, item.GetName()))))

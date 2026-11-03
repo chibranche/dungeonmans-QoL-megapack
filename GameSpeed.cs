@@ -7,7 +7,7 @@ using Microsoft.Xna.Framework.Input;
 
 namespace DungeonmansQoL;
 
-// Game speed x1 / x2 / x3: the button top left, F11, or "Game Speed" in the Options menu. Multiplies the frame time
+// Game speed x1 / x2 / x3: the button top right, F11, or "Game Speed" in the Options menu. Multiplies the frame time
 // the game receives in Update/Draw, so animations, movement, turn delays and effects play faster; the rules don't
 // change. Side effect: held-key repeat is faster too. Never applied on the main menu. Remembered between launches.
 internal static class GameSpeed
@@ -103,13 +103,15 @@ internal static class GameSpeed
 		{
 			return;
 		}
-		g.theRenderer.BeginSpriteBatch();
-		var r = new Rectangle(Ui.ScreenSize.X - 112 - 256 - 8 - 64 - 8 - 96, 8, 96, 32);
-		bool fast = speed > 1;
-		bool hot = Ui.BoxButton("qol_speed", r, "", Cycle, accent: fast ? Palette.Info : (Color?)null, selected: fast,
-			tooltipText: "Game speed x" + speed + "\nClick or F11: x1 / x2 / x3\nAlso in the Options menu");
-		Ui.Icon("condition_speed_up", new Rectangle(r.X + 10, r.Y + 4, 24, 24));
-		Ui.Text("x" + speed, r.X + 44, r.Y + 3, fast ? Palette.Accent : Palette.Text, UiFont.Medium);
-		g.theRenderer.EndSpriteBatch();
+		TopBar.Add("qol.speed", 96, (r, clickable) =>
+		{
+			g.theRenderer.BeginSpriteBatch();
+			bool fast = speed > 1;
+			Ui.HangingButton("qol_speed", r, "", clickable ? Cycle : (Action)null, accent: fast ? Palette.Info : (Color?)null, selected: fast,
+				tooltipText: "Game speed x" + speed + "\nClick or F11: x1 / x2 / x3\nAlso in the Options menu\nDrag to move", stackLevel: 6);
+			Ui.Icon("condition_speed_up", new Rectangle(r.X + 10, r.Y + 4, 24, 24));
+			Ui.Text("x" + speed, r.X + 44, r.Y + 3, fast ? Palette.Accent : Palette.Text, UiFont.Medium);
+			g.theRenderer.EndSpriteBatch();
+		}, priority: 30);
 	}
 }

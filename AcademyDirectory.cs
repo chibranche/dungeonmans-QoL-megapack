@@ -105,11 +105,7 @@ internal static class AcademyDirectory
 
 		new Kind { Category = "Pets", Title = "Professor Hatch", Match = Is<NPCAcademyHatch>,
 			Purpose = "Battle Poultry: store, withdraw, heal, breed, shop.",
-			Help = "Deposit all / Withdraw all are on the side of the lists. Pets match your level; breed with Passionate Poultry Poultice, make a pet forget a power with Power Pruning Poultice." },
-		new Kind { Category = "Pets", Title = "The Coop", OnePerKind = true, Match = Is<NPCAcademyHatch>,
-			Purpose = "All birds in one window: feed, breed, ascend, Pantry.",
-			Use = () => { if (Config.On(Config.Coop)) { CoopPanel.Open(); } return null; },
-			Help = "Every bird (bags + Academy) with details; feed from bags or the Pantry; breeding preview; Ascend for +1 generation; Pantry storage bought with Feathers." },
+			Help = "Pets match your level; breed with Passionate Poultry Poultice, make a pet forget a power with Power Pruning Poultice." },
 		new Kind { Category = "Pets", Title = "Chromafication Device", Match = Is<dmChickenChromaficationDevice>, OnePerKind = true,
 			Purpose = "Change your birds' colours.",
 			Help = "Cosmetic recolouring of Battle Poultry." },
@@ -120,6 +116,11 @@ internal static class AcademyDirectory
 		new Kind { Category = "Other", Title = null, Match = Is<NPCAcademyGravedigger>,
 			Purpose = "Necromansy secrets and the ghost by the exit.",
 			Help = "Talk to him to learn about Necromansy and the Horseless Headsmans." },
+		new Kind { Category = "Other", Title = "Fallen heroes", OnePerKind = true, Match = Is<NPCAcademyGravedigger>,
+			Purpose = "Memorials of fallen heroes still to collect.",
+			Status = () => Config.On(Config.FallenHeroes) ? FallenHeroes.All().Count + " left" : null,
+			Use = () => { string why = FallenHeroes.Blocked(); if (why == null) { FallenHeroes.Open(); } return why; },
+			Help = "Each memorial gives XP, +stats, the Academy items the hero carried and (level 5+) a named weapon or armor. It sits on the floor where they died." },
 		new Kind { Category = "Other", Title = "Daily Danger", Match = Is<dmDailyDangerBook>, OnePerKind = true,
 			Purpose = "Seeded daily challenge with your Academy roster.",
 			Help = "A daily run. Winning pays Proofs of Stremf into the war chest." },
@@ -180,7 +181,7 @@ internal static class AcademyDirectory
 			{
 				continue;
 			}
-			// One "go there" kind per actor, plus any one-click "Use" kinds (e.g. The Coop on Hatch).
+			// One "go there" kind per actor, plus any one-click "Use" kinds (e.g. Fallen heroes on the Gravedigger).
 			Kind first = Kinds.FirstOrDefault(k => k.Use == null && k.Match(actor));
 			foreach (Kind kind in Kinds.Where(k => (k == first || k.Use != null) && k.Match(actor)))
 			{
@@ -254,13 +255,8 @@ internal static class AcademyDirectory
 	{
 		dmGame g = __instance;
 		GameSpeed.HandleKey(g);
-		if (!CoopPanel.IsOpen && !IsOpen && QoLHub.HandleInput(g))
+		if (!IsOpen && QoLHub.HandleInput(g))
 		{
-			return false;
-		}
-		if (CoopPanel.IsOpen)
-		{
-			CoopPanel.HandleInput(g);
 			return false;
 		}
 		if (OverworldHud.HandleInput(g))
@@ -298,6 +294,10 @@ internal static class AcademyDirectory
 		else if (prepPressed && Config.On(Config.HeroPrep))
 		{
 			Prepare();
+		}
+		else if (Ui.KeyFocusActive && !a.Contains(ActionButton.MouseWheel_Up) && !a.Contains(ActionButton.MouseWheel_Down))
+		{
+			// Tab / arrows / Enter move and press the focused button (ModKit keyboard navigation).
 		}
 		else if (a.Contains(ActionButton.Left) || a.Contains(ActionButton.ArrowKey_Left))
 		{
@@ -428,11 +428,13 @@ internal static class AcademyDirectory
 			}
 			else if (CanOpen(g))
 			{
-				g.theRenderer.BeginSpriteBatch();
-				// Left of the game's own 80px top-right icon.
-				var r = new Rectangle(Ui.ScreenSize.X - 112 - 256, 8, 256, 32);
-				Ui.BoxButton("qol_dir_open", r, "Academy Directory", Open, font: UiFont.Medium, tooltipText: "Everyone and everything in the Academy (Home)", stackLevel: 6);
-				g.theRenderer.EndSpriteBatch();
+				TopBar.Add("qol.directory", 256, (r, clickable) =>
+				{
+					g.theRenderer.BeginSpriteBatch();
+					Ui.HangingButton("qol_dir_open", r, "Academy Directory", clickable ? Open : (Action)null,
+						tooltipText: "Everyone and everything in the Academy (Home)\nDrag to move", stackLevel: 6);
+					g.theRenderer.EndSpriteBatch();
+				}, priority: 10);
 			}
 		}
 		catch (Exception ex)
@@ -467,7 +469,7 @@ internal static class AcademyDirectory
 
 		// Tabs with counts; Favorites first (with a heart icon drawn over the padding).
 		string[] labels = Categories.Select((cat, i) => (i == 0 ? "     " : "") + cat + " " + EntriesIn(i).Count).ToArray();
-		int th = Ui.Tabs("qol_dir", c.X, c.Y, labels, tab, SetTab, null, UiFont.Small);
+		int th = Ui.Tabs("qol_dir", c.X, c.Y, labels, tab, SetTab, null, UiFont.Small, c.Width);
 		Ui.Icon("ui_favorite_heart", new Rectangle(c.X + 10, c.Y + 7, 18, 18));
 
 		// Cards grid.

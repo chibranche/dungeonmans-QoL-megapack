@@ -23,6 +23,20 @@ internal static class OverworldHud
 		g.dungeonMans != null && g.dungeonMans.bIsInOverworld && g.theCurrentLevel == g.theWorld && !AcademyDirectory.UiBusy(g)
 		&& (Config.On(Config.ProofReminder) || Config.On(Config.RandomDungeon));
 
+	// A hand-in walk only finishes at the Academy: a new hero, or entering anywhere else (an encounter, a dungeon),
+	// cancels it so the button comes back and nobody is teleported to the Headmaster later.
+	public static void Register()
+	{
+		Events.HeroChanged += (g, hero) => pendingHandIn = false;
+		Events.LevelEntered += (g, level) =>
+		{
+			if (!(level is dmAcademy) && level != g.theWorld)
+			{
+				pendingHandIn = false;
+			}
+		};
+	}
+
 	// Called every frame from the input hook. Finishes the hand-in once the hero has arrived in the Academy.
 	public static bool HandleInput(dmGame g)
 	{
@@ -45,7 +59,7 @@ internal static class OverworldHud
 
 	private static int Qty(dmItem i) => Math.Max(1, i.GetBulkCount());
 
-	private static GazetteerDungeonEntry AcademyEntry() =>
+	internal static GazetteerDungeonEntry AcademyEntry() =>
 		dmGazetteer.locationDictionary.GetAllLocationsOfType<GazetteerDungeonEntry>()
 			.FirstOrDefault(d => d.dungeonArchetype != null && d.dungeonArchetype.Contains("academy") && !d.dungeonArchetype.Contains("pitstop"))
 		?? dmGazetteer.locationDictionary.GetAllLocationsOfType<GazetteerDungeonEntry>()
@@ -64,7 +78,7 @@ internal static class OverworldHud
 			return;
 		}
 		pendingHandIn = true;
-		Game.dungeonMans.HeroAutoPathToLocation(academy.location, "Heading to the ^3Academy^7 to hand in your finds.");
+		Game.dungeonMans.HeroAutoPathToLocation(academy.location, HasItems ? "Heading to the ^3Academy^7 to hand in your finds." : "Heading back to the ^3Academy^7.");
 	}
 
 	// ---- random dungeon ----
@@ -112,6 +126,7 @@ internal static class OverworldHud
 
 	// ---- drawing ----
 	private const int W = 320;
+	private const string PosX = "overworld_window_x", PosY = "overworld_window_y";
 
 	public static void Draw(dmGame g)
 	{
@@ -121,11 +136,18 @@ internal static class OverworldHud
 		}
 		bool items = Config.On(Config.ProofReminder);
 		bool random = Config.On(Config.RandomDungeon);
-		int h = (items ? 96 : 0) + (random ? 128 : 0);
-		var box = new Rectangle(Ui.ScreenSize.X - W - 112, 48, W, h);
+		int h = (items ? 96 : 0) + (random ? (lastPick == "" ? 96 : 128) : 0);
 
+		// Draggable anywhere on its background (buttons still click); the position is saved in the QoL config.
+		var size = new Point(W, h);
+		var saved = new Point(QoLMod.Ctx.Settings.GetInt(PosX, Ui.ScreenSize.X - W - 112), QoLMod.Ctx.Settings.GetInt(PosY, 48));
 		g.theRenderer.BeginSpriteBatch();
-		Ui.Area("qol_ow_bg", box, null, Ui.WindowLevel - 2);
+		Point pos = Ui.Drag("qol_ow", new Rectangle(Ui.ClampToScreen(saved, size), size), Ui.ClampToScreen(saved, size), size, p =>
+		{
+			QoLMod.Ctx.Settings.SetInt(PosX, p.X);
+			QoLMod.Ctx.Settings.SetInt(PosY, p.Y);
+		});
+		var box = new Rectangle(pos.X, pos.Y, W, h);
 		Ui.Box(box);
 		int x = box.X + 14, y = box.Y + 10, w = W - 28;
 		if (items)
@@ -135,8 +157,9 @@ internal static class OverworldHud
 			int others = carried.Where(i => i.academyUnlockType != AcademyProgressData.AcademyUnlocksEnum.PROOF_OF_STREMF).Sum(Qty);
 			Ui.Text("Academy items", x, y, Palette.Accent, UiFont.Medium);
 			Ui.TextRight("^3" + proofs + "^7 Proof" + (proofs == 1 ? "" : "s") + "   ^3" + others + "^7 other", x + w, y + 4, Palette.TextDim);
-			Ui.BoxButton("qol_ow_handin", new Rectangle(x, y + 36, w, 32), pendingHandIn ? "Walking to the Academy..." : "Go hand them in", HandIn, carried.Count > 0 && !pendingHandIn,
-				tooltipText: "Walks to the Academy, then opens the Headmaster: pick \"I've brought some relics\"");
+			// With nothing to hand in it still walks you home.
+			Ui.BoxButton("qol_ow_handin", new Rectangle(x, y + 36, w, 32), pendingHandIn ? "Walking to the Academy..." : carried.Count > 0 ? "Go hand them in" : "Back to Academy", HandIn, !pendingHandIn,
+				tooltipText: carried.Count > 0 ? "Walks to the Academy, then opens the Headmaster: pick \"I've brought some relics\"" : "Walks back to the Academy");
 			y += 86;
 		}
 		if (items && random)
@@ -149,14 +172,23 @@ internal static class OverworldHud
 			DiffButton(Difficulty.Mundane, new Rectangle(x, y + 36, 96, 32), MundaneColor, "Threat 2+ below your level");
 			DiffButton(Difficulty.Adventurous, new Rectangle(x + 100, y + 36, 96, 32), Palette.Text, "Threat around your level");
 			DiffButton(Difficulty.Dangerous, new Rectangle(x + 200, y + 36, 96, 32), DangerousColor, "Threat 1-2 above your level");
-			Ui.Text(lastPick == "" ? "One of the 5 nearest unfinished ones." : Ui.Fit("Last: " + lastPick, w), x, y + 76, Palette.TextDim);
+			if (lastPick != "")
+			{
+				Ui.Text(Ui.Fit("Last: " + lastPick, w), x, y + 76, Palette.TextDim);
+			}
 		}
 		g.theRenderer.EndSpriteBatch();
 	}
 
+	private static readonly Dictionary<Difficulty, Throttled<int>> counts = new Dictionary<Difficulty, Throttled<int>>();
+
 	private static void DiffButton(Difficulty d, Rectangle r, Color c, string tip)
 	{
-		int n = Candidates(d).Count;
+		if (!counts.TryGetValue(d, out Throttled<int> count))
+		{
+			counts[d] = count = new Throttled<int>(() => Candidates(d).Count, 30);
+		}
+		int n = count.Value;
 		Ui.BoxButton("qol_ow_" + d, r, d.ToString(), () => GoRandom(d), n > 0, tooltipText: tip + (n > 0 ? "\nKnown nearby: " + n : "\nNone known nearby"), accent: c);
 	}
 }

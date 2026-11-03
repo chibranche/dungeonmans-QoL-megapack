@@ -43,7 +43,7 @@ internal static class ProofPatches
 	private static int StepsForModifiers()
 	{
 		dmInput input = dmUtilities.theGame.theInput;
-		if (!Config.On(Config.ProofsBulk))
+		if (!Config.On(Config.Proofs))
 		{
 			return 1;
 		}
@@ -99,7 +99,7 @@ internal static class ProofPatches
 		previouslyDown.Clear();
 		previouslyDown.UnionWith(input.PressedKeys);
 
-		if (presetSlot >= 0 && !__instance.InConfirmMode() && Config.On(Config.ProofsPresets))
+		if (presetSlot >= 0 && !__instance.InConfirmMode() && Config.On(Config.Proofs))
 		{
 			UsePreset(__instance, presetSlot, save: input.bShiftIsDown);
 			return false;
@@ -148,7 +148,7 @@ internal static class ProofPatches
 	// Panel under the vanilla dialog: shortcut hint + one row per preset with clickable Load / Save.
 	private static void DrawPostfix(ui_spendProofsOfStremfDialog __instance)
 	{
-		bool bulk = Config.On(Config.ProofsBulk), presets = Config.On(Config.ProofsPresets);
+		bool bulk = Config.On(Config.Proofs), presets = Config.On(Config.Proofs);
 		if (__instance.InConfirmMode() || (!bulk && !presets))
 		{
 			return;

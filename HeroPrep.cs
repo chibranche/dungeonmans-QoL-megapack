@@ -68,8 +68,13 @@ internal static class HeroPrep
 
 	private static int WarchestCount => Actors<dmAcademyWarchest>().Any() ? dmGazetteer.itemsInAwardChest?.Count ?? 0 : 0;
 
-	// What the button would do right now (shown in the Directory's help strip).
-	public static List<string> Plan()
+	// What the button would do right now (shown in the Directory's help strip). Asked every frame by the Directory and
+	// the QoL hub, so it is recomputed a few times a second.
+	private static readonly Throttled<List<string>> plan = new Throttled<List<string>>(ComputePlan);
+
+	public static List<string> Plan() => plan.Value;
+
+	private static List<string> ComputePlan()
 	{
 		var plan = new List<string>();
 		if (CanScrolls)
@@ -89,8 +94,8 @@ internal static class HeroPrep
 		{
 			plan.Add("spend " + dmGazetteer.academyProgress.iUnspentProofsOfStremf + " Proofs with preset 1");
 		}
-		dmBirdEgg fav = PoultryCore.Favorite;
-		if (fav != null && !PoultryCore.IsEquipped(fav))
+		dmBirdEgg fav = FavoriteBird.ToEquip();
+		if (fav != null)
 		{
 			plan.Add("equip your favorite bird " + fav.BirdName);
 		}
@@ -109,6 +114,7 @@ internal static class HeroPrep
 
 	public static void Run()
 	{
+		plan.Reset();
 		dmGame g = Game;
 		dmHero hero = Hero;
 		var done = new List<string>();
@@ -185,19 +191,7 @@ internal static class HeroPrep
 			return n == 0 ? null : "Grand Library: took the book from " + n + " bookstand" + (n > 1 ? "s" : "") + ".";
 		});
 
-		Step(done, () =>
-		{
-			dmBirdEgg bird = PoultryCore.Favorite;
-			if (bird == null || PoultryCore.IsEquipped(bird))
-			{
-				return null;
-			}
-			if (bird.GetStatInfo().bWounded)
-			{
-				bird.GetStatInfo().bWounded = false;
-			}
-			return PoultryCore.Equip(bird);
-		});
+		Step(done, FavoriteBird.Equip);
 
 		string text = done.Count == 0
 			? "Nothing left to prepare for this hero."
@@ -224,7 +218,7 @@ internal static class HeroPrep
 		catch (Exception e)
 		{
 			Log.Write("Prepare hero step failed: " + e);
-			done.Add("^1A step failed^7 (see DungeonmansQoL.log).");
+			done.Add("^1A step failed^7 (see ModKit\\modkit.log).");
 		}
 	}
 
