@@ -15,16 +15,35 @@ internal static class QoLCapture
 		DevCapture.Scene("qol_gallery", () => gallery = true, () => gallery = false);
 		DevCapture.Scene("qol_topbar", () => { });
 		DevCapture.Scene("qol_hub", () => QoLHub.IsOpen = true, () => QoLHub.IsOpen = false);
-		DevCapture.Scene("qol_directory", () => { if (Dm.InAcademy) { AcademyDirectory.DevOpen(1); } }, () => AcademyDirectory.IsOpen = false);
-		DevCapture.Scene("qol_directory_fav", () => { if (Dm.InAcademy) { AcademyDirectory.DevOpen(0); } }, () => AcademyDirectory.IsOpen = false);
 		DevCapture.Scene("qol_fallen", () => FallenHeroes.IsOpen = true, () => FallenHeroes.IsOpen = false);
 		DevCapture.Scene("qol_settings", Ui.OpenModSettings, Ui.CloseModSettings);
 		DevCapture.Scene("qol_inventory", () => Dm.Game.OpenInventoryPanel(), () => Dm.Game.bInventoryMode = false);
 		DevCapture.Scene("qol_docs", () => Ui.OpenModDocs("qol"), Ui.CloseModSettings);
 		DevCapture.Scene("qol_options", () => Dm.Game.ToggleOptionsMode(true), () => Dm.Game.ToggleOptionsMode(false));
+		// Academy scenes last: qol_enter_academy moves the hero into the Academy (capture sessions never save).
+		DevCapture.Scene("qol_enter_academy", EnterAcademy);
+		DevCapture.Scene("qol_academy", () => { });
+		DevCapture.Scene("qol_directory", () => { if (Dm.InAcademy) { AcademyDirectory.DevOpen(1); } }, () => AcademyDirectory.IsOpen = false);
+		DevCapture.Scene("qol_directory_fav", () => { if (Dm.InAcademy) { AcademyDirectory.DevOpen(0); } }, () => AcademyDirectory.IsOpen = false);
 	}
 
 	private static bool gallery;
+
+	// Same gateway the game builds when it sends a hero home after a new overworld.
+	private static void EnterAcademy()
+	{
+		dmGame g = Dm.Game;
+		if (Dm.InAcademy || g.dungeonMans == null)
+		{
+			return;
+		}
+		dmGateway gate = (dmGateway)g.SpawnActorFromArchetype("default_gateway");
+		gate.worldArchetypeToLoad = "dmAcademy";
+		gate.areaGenerationData = "academy_data";
+		gate.saveName = "dungeonmans_academy";
+		g.currentActivatedGateway = gate;
+		g.bChangeMapThisFrame = true;
+	}
 
 	// Draws the game's own UI pieces side by side, to pick assets for mod windows.
 	private static void DrawGallery(dmGame g)
